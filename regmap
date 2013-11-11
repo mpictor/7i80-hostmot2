@@ -1,12 +1,12 @@
-HostMot2 Register map in offsets from 32 bit memory base address
-
+ HostMot2 Register map in offsets from 32 bit memory base address
 Note the following addresses are standard but driver should use IDROM info
 instead of this table as some configurations may not be mapped the same.
 
 Also, number of special functions (counters, PWMGens etc) is determined 
 by configuration.
 Additional registers are always at increasing doubleword boundaries 
-with the exception of UART data FIFOs and BSPI data FIFOs 
+with the exception of UART data FIFOs , SSerial data registers,
+BSPI data FIFOs, and ResMod position and velocity registers 
 
 
 First ID stuff
@@ -18,22 +18,22 @@ First ID stuff
 
 LEDS
 
-0x0200	LEDS qre in MS byte
+0x0200	LEDS are in MS bits (left justified)
 
 Then the IDROM
 
 0x0400	Normal IDROM location
 
-0x400	IDROMType		2 for this type
+0x400	IDROMType		3 for this type
 0x404	OffsetToModules		64 for this type
-0x408	OffsetToPindesc		512 for this type
+0x408	OffsetToPindesc		384 for this type
 0x40C	BoardNameLow		
 0x410	BoardNameHigh
 0x414	FPGA size
 0x418	FPGA pins
 0x41C	IOPorts			
 0x420	IOWidth
-0x424	PortWidth		Normally 24
+0x424	PortWidth		
 0x428	ClockLow		In Hz	(note:on 5I20/4I65 = PCI clock 
                                 guessed as 33.33 MHz)
 0x42C	ClockHigh		In Hz
@@ -73,33 +73,23 @@ MPBitmap(1)	(Double) = bit map of which registers are multiple
                 '1' = multiple, LSb = reg(0)
 
 
-0 GTag marks end of module descriptors
+0 GTag marks end of module descriptors (note Rev 2 IDROMS MDs start at 0x600)
 
 
-
-
-0x600 Pin Descriptors
-
-    This IO region contains the Pin Descriptors, starting at 0 and going
-    up to (IDROM.IOWidth-1) or 143, whichever is less.  (144 is the max
-    number of IO pins currently supported by HostMot2.)  Unlike the Module
-    Descriptor array (described above), there is no sentinel at the end
-    of the PD array, instead the array size is determined by the IDRom.
-
+0x5C0 Pin descriptors 0 through 143. 
 There is one Pin Descriptor for each I/O pin.
 Each pin descriptor is a doubleword with the following record structure:
 
-0x600: (from least to most significant order)
+0x5C0: (from least to most significant order)
 SecPin(0)	(byte) = Which pin of secondary function connects here 
                 eg: A,B,IDX. 
                          Output pins have bit 7 = '1'
 SecTag(0)	(byte) = Secondary function type (PWM,QCTR etc). 
                 Same as module GTag
-SecUnit(0)	(byte) = Which secondary unit or channel connects here.
-                If bit 7 is set, the pin is shared by all secondary units.
+SecUnit(0)	(byte) = Which secondary unit or channel connects here
 PrimaryTag(0)	(byte) = Primary function tag (normally I/O port)
 
-0x604:(from least to most significant order)
+0x5C4:(from least to most significant order)
 SecPin(1)	(byte) = Which pin of secondary function connects here 
                 eg: A,B,IDX. 
                          Output pins have bit 7 = '1'
@@ -109,7 +99,6 @@ SecUnit(1)	(byte) = Which secondary unit or channel connects here
 PrimaryTag(1)	(byte) = Primary function tag (normally I/O port)
 
 ...
-
 
 
 
@@ -164,7 +153,7 @@ Bit 1 = DRQ status, - = active request
 Bits 16..31 = DRQ mask for demand mode DMA modules 0..15
 
 Note this should be reset to 0x00000000 to enable re-configuration
-on 4I68, 5I23, 5I22, as DREQ/DACK are muxed with /PROGRAM and DONE 
+on 4I68, 5I23, 5I22, and 3X20 as DREQ/DACK are muxed with /PROGRAM and DONE 
  
 0x0F00 = DemandMode DMA enable register
 	    
@@ -221,6 +210,121 @@ A '1' bit in the OutputInv register inverts the cooresponding output bit.
 This may be the GPIO output register bit or alternate source. The input is 
 not inverted.
 
+**************************************************
+Fanuc absolute encoder interface. Interfaces to Fanuc serial absolute encoders
+
+DataReg0
+
+0x1500 32 bit serial data 0..31 for FAbs channel 0
+0x1504 32 bit serial data 0..31 for FAbs channel 1
+0x1508 32 bit serial data 0..31 for FAbs channel 2
+
+Writing to DataReg0 starts a transfer request on the selected
+FanucAbs module
+
+...
+DataReg1
+
+0x1600 32 bit serial data 32..63 for FAbs channel 0
+0x1604 32 bit serial data 32..63 for FAbs channel 1
+0x1608 32 bit serial data 32..63 for FAbs channel 2
+...
+DataReg2
+
+0x1700 12 bit serial data 64..75 for FAbs channel 0 (right justified)
+0x1704 12 bit serial data 64..75 for FAbs channel 1 (right justified)
+0x1708 12 bit serial data 64..75 for FAbs channel 2 (right justified)
+...
+DataReg 2 is also used for optional setup bits and a cable error status bit
+Bit 31	CableErr     (R/O) If this bit is set, it indicates that the data 
+                     polarity is wrong or the cable is unplugged
+Bits 24..30	     Bit Length ((default 76) only writeable 
+     		     if write setup enable bit is set
+Bit 14..23	     Request length register, default 8 Usec. only writeable
+    		     if write setup enable bit is set
+
+Request length is request length register value * clocklow period
+
+
+Data
+Note: Fanuc serial encoder data is LSb first so is right shifted, 
+and ends up left justified in the three data registers
+
+0x1800 Control register 0 for FAbs channel 0
+0x1804 Control register 0 for FAbs channel 1
+0x1808 Control register 0 for FAbs channel 2
+...
+
+Control register 0 fields:
+
+
+Bit 12..14	 Timer channel select
+Bit 11		 Busy bit, set when transfer is started, 
+   		 cleared when all data bits are recieved 
+Bit 10		 RXGo set when recieve data start bit is detected
+    		 cleared when all data bits are received     
+Bit 9		 TStartMask, if set, timer start transfer is allowed
+Bit 8		 GstartMask, if set global start transfer is allowed
+Bit 7		 Setup Write Enable register
+
+
+The timer select register selects the desired timer output
+from the DPLL timer module: 0=Ref 1=timer1, 2=timer2, 3=timer3, 4=timer4
+The TStartMask must be set to enable timer starts. 
+
+0x1900 Control register 1 for FAbs channel 0
+0x1904 Control register 1 for FAbs channel 1
+0x1908 Control register 1 for FAbs channel 2
+...
+
+Control register 1
+Bits 0..19	 Bitrate select register. (default set for 1.024 MHz bit rate)
+     		 Only writeable if write setup enable bit is set
+Bits 28..31	 Digital filter setting in clock low counts (default  0xF)
+    		 Only writeble if write setup enable bit is set
+
+Note a digital filter value of 0 will not work (only 1..15 are valid)
+
+Receive bitrate is generated by a 20 bit phase accumulator. 
+Bitrate is: (Control_Register_1/1048576)*ClockLow
+re-arranged this is Control_Register_1 = 1048576*Bitrate/ClockLow
+
+0x1A00 Global start register/busy register. Writing the global start register
+(data is dont-care) starts transfers on all FanucAbs modules that have their 
+global start mask set.
+
+Reading the Global start register returns the busy status of each channel, 
+with bit# = channel#
+
+Fanuc data format (76 bits): So far just for Aa64 (860-360-xxx)
+bits 0..4 	constant : encoder type?
+bit  5     	1=battery fail
+bits 6,7	unknown
+bit  8		1=un-indexed
+bits 9..17	unknown, perhaps for higher res encoders
+bits 18..37	16 bit absolute encoder data (0..65535 for one turn)
+bits 38,39      unknown
+bits 40..55	16 bit absolute turns count
+bits 56,57	unknown
+bits 58..67	10 bit absolute commutation encoder (four 0.1023 cycles per turn)
+bits 68..70	unknown
+bits 71..75	ITU CRC-5 (calculated MSB first)
+
+These encoders are absolute if the battery backup is maintained since the 
+last homing. This can be determined by the status of the un-indexed bit, 
+at least until the encoder crosses index. Surprisingly 
+(well it surprised me anyway) the encoders maintain position with battery 
+power alone. It appears that they keep the LEDS/processor alive with a 
+few uA of battery power (probably low duty cycle LED pulsing/analog circuits 
+power cycling). This can be verified by reading the battery current and then 
+moving the encoder, it goes from a few uA to many mA with a slow encoder move.
+
+The commutation track is always absolute so can be used for commutation 
+data regardless of the index status. Note that the commutation track
+seems to be interpolated so is not better than maybe 1% accuracy
+ 
+Note that the timing/baudrate are all precalculated so should not need
+changing, but can be changed by setting the setup enable bit in control reg 0
 
 **************************************************
 Step/dir generators currently 48 bit accumulator = 16 bits full step, 
@@ -565,9 +669,16 @@ Any divisor with MSb set = divide by 1
 
 0x3800  MuxedTSCount 16 bit time stamp counter (read only) 
 
-0x3900  QfilterRate 12 bit Quadrature counter filter rate
+0x3900  QfilterRate 12 bit Quadrature counter filter rate 
+(bits 0 ..11) 
 count rate is ClockLow/(QFilterRate+2). 
-Any divisor with MSb set = divide by 1
+Any divisor with MSb (bit 11) set = divide by 1
+
+Version 4 and greater muxed encoders have 4 bit muxed data deskew register 
+in top nibble (bits 28 ..31) of the QFilterRate register. 
+This delays the sampling time of muxed encoder data by 0 to 15 ClockLow 
+periods to accomodate long cables and isolation delays and allow higher 
+multiplex rates. 
 
 Notes about quadrature filter rate:
 
@@ -620,12 +731,14 @@ inaccuracies in typical encoders.
 
 For multiplexed quadrature counters, the multiplex channel rate is 1/2 the 
 filter rate. Due to flat cable signal integrity and time of flight issues the 
-multiplex channel rate should not be higher than 8 MHz, with lower rates 
+multiplex channel rate should not be higher than 16 MHz, with lower rates 
 needed with longer cable runs. This means that the filter rate should not 
 be set higher than 16 MHz. The hardware default for the multiplexed flter 
 rate register is set to divide by 4 which gives a multiplex rate of
 4.166 MHz with a 33 MHz clklow and 6.25 MHz with a 50 MHZ clklow. 
 
+Note that fixed clock skew can be adjusted to accomodate long cables and 
+encoder isolation in muxed encoder version 4 and greater. This alo allow highermux rates
 The hardware default filter rate is set to divide by 1 for non-multiplexed 
 counters.
 
@@ -831,6 +944,49 @@ settings but 1 uS of deadtime, the PWM and NPWM outputs would both have high
 times of 23 uS (25 - (2X 1 uS), 1 uS per edge) 
 
 
+BISS encoder module. Unidirectional BISS interface, 512 bits maximum
+
+BISS Data register
+
+0x4900 BISS 0 32 bit data register
+0x4904 BISS 1 32 bit data register
+0x4908 BISS 2 32 bit data register
+...
+
+This register is the top of a 16 deep x32 wide LIFO stack. 
+BISS data sizes greater that 32 bits are read by muliple reads 
+of the same address. Data is returned LSW first and right justified. 
+Writes to the data register start a data transfer in selected channel
+
+BISS Control register
+0x4A00 BISS 0 Control register
+0x4A04 BISS 0 Control register
+0x4A08 BISS 0 Control register
+...
+
+Bits 31..16	BISS DDS data rate register
+Bits 14..12	Timer select register
+Bit 11		TStart Mask
+Bit 10		PStart Mask 		
+Bits 9..0	(write only) BISS data bits (1 to 512)
+Bits 4..0	(read only) LIFO level (number of pops needed to read all data)
+
+
+The BISS data rate field sets the BISS clock rate. Thsi rate is 
+(ClockHigh/65536)*BISS_DataRateReg
+
+The timer select register selects the desired timer output 
+from the DPLL timer module: 0=Ref 1=timer1, 2=timer2, 3=timer3, 4=timer4
+The TStartMask must be set to enable timer starts. The PStartMask 
+must be set to enable global starts.
+
+BISS Global start register/busy status register
+0x4C00	    Writes to the global start register start data transfers in all
+	    BISS module that have the PStartMask set
+	    Reads here read back the busy status of each BISS module
+	    bit 0 high = module 0 busy, bit 1 high = module 1 busy etc
+
+
 Twiddler Module: Smart GPIO bit twiddler, 1 to 31 bits of GPIO 
 (input, output, or I/O) default 1K program ROM, 512 bytes of RAM
 internal hardware includes free running timer, (preset to 10 MHz)
@@ -838,7 +994,7 @@ buffered I/O (update or sample all I/O at once) 8 bit 33 or 50 mips
 processor, doorbell registers to indicate host parameter write, 
 
 
-0x4C00	 Processor command register 
+0x4D00	 Processor command register 
 This is for access to the smart twiddler modules parameters, allows reading 
 and writing parameters. Parameter access is just for setup and discovery.
 not realtime.
@@ -851,14 +1007,16 @@ Bits 11..0  Parameter address
 Firmware is host side downloadable so neither bitfile recompilation nor 
 Xilinx blockram loading tools are required to try new firmware.
 
-0x4D00	 8 bit Processor data register
+0x4E00	 8 bit Processor data register
 This is for access to the twiddler modules parameters, normally not needed
 except for debug and parameter tweaking.
 
-0x4E00 	   32 bit read/write embedded processor communication register 0
-0x4E04 	   32 bit read/write embedded processor communication register 1
-0x4E08 	   32 bit read/write embedded processor communication register 2
-0x4E0C 	   32 bit read/write embedded processor communication register 3
+
+
+0x4F00 	   32 bit read/write embedded processor communication register 0
+0x4F04 	   32 bit read/write embedded processor communication register 1
+0x4F08 	   32 bit read/write embedded processor communication register 2
+0x4F0C 	   32 bit read/write embedded processor communication register 3
 
 Default is four 32 bit read/write host communication registers
 
@@ -957,9 +1115,9 @@ The receive FIFO also spans the same address space but the
 read address within the range is dont-care.
 
 0x5500 BSPI channel descriptor setup registor 0
-0x5504 BSPI channel descriptor setup registor 1
-0x5508 BSPI channel descriptor setup registor 2
-0x550c BSPI channel descriptor setup registor 3
+0x5540 BSPI channel descriptor setup registor 1
+0x5580 BSPI channel descriptor setup registor 2
+0x55C0 BSPI channel descriptor setup registor 3
 ...
 
 The channel descriptor setup location is where the channel 
@@ -999,9 +1157,9 @@ Bit 31 	      = Dont_Echo. If set, dont push SPI returned data on
                 receive FIFO. (for output only SPI devices) 
 
 0x5600	BSPI FIFOCount register 0
-0x5604	BSPI FIFOCount register 1
-0x5608	BSPI FIFOCount register 2
-0x560C	BSPI FIFOCount register 3
+0x5640	BSPI FIFOCount register 1
+0x5680	BSPI FIFOCount register 2
+0x56C0	BSPI FIFOCount register 3
   
 FIFOCount:
 
@@ -1025,10 +1183,10 @@ SPI interface data register
 
 32 bits (for data less than 32 bits data is right justified)
 
-0x5800 DBSPI FIFO port 0
-0x5840 DBSPI FIFO port 1
-0x5880 DBSPI FIFO port 2
-0x58C0 DBSPI FIFO port 3
+0x5700 DBSPI FIFO port 0
+0x5740 DBSPI FIFO port 1
+0x5780 DBSPI FIFO port 2
+0x57C0 DBSPI FIFO port 3
 ...
 The SPI data FIFO is the location of a 16 deep transmit
 and 16 deep receive FIFO for the SPI interface. There is only 
@@ -1040,10 +1198,10 @@ the channel descriptor at the SPI end of the transmit FIFO.
 The receive FIFO also spans the same address space but the 
 read address within the range is dont-care.
 
-0x5900 DBSPI channel descriptor setup registor 0
-0x5904 DBSPI channel descriptor setup registor 1
-0x5908 DBSPI channel descriptor setup registor 2
-0x590c DBSPI channel descriptor setup registor 3
+0x5800 DBSPI channel descriptor setup registor 0
+0x5840 DBSPI channel descriptor setup registor 1
+0x5880 DBSPI channel descriptor setup registor 2
+0x58C0 DBSPI channel descriptor setup registor 3
 ...
 
 The channel descriptor setup location is where the channel 
@@ -1083,10 +1241,10 @@ Bit 30        = Dont_Clear_Frame. If set, leave frame asserted at EOT.
 Bit 31 	      = Dont_Echo. If set, dont push SPI returned data on
                 receive FIFO. (for output only SPI devices) 
 
-0x5A00	DBSPI FIFOCount register 0
-0x5A04	DBSPI FIFOCount register 1
-0x5A08	DBSPI FIFOCount register 2
-0x5A0C	DBSPI FIFOCount register 3
+0x5900	DBSPI FIFOCount register 0
+0x5940	DBSPI FIFOCount register 1
+0x5980	DBSPI FIFOCount register 2
+0x59C0	DBSPI FIFOCount register 3
   
 FIFOCount:
 
@@ -1119,18 +1277,18 @@ Bit 11	    Start/Stop bit     Set to indicate firmware start/stop command
 Bits 10..0  Parameter address for read/write commands  
                         
 
-0x5B00	 SSERIAL 0 Processor command register 
-0x5B40	 SSERIAL 1 Processor command register 
+0x5A00	 SSERIAL 0 Processor command register 
+0x5A40	 SSERIAL 1 Processor command register 
 ...
 
 
-0x5C00	 8 bit Processor data register
+0x5B00	 8 bit Processor data register
 This is for access to the smart serial modules parameters, allows reading and 
 writing parameters. Parameter access is just for setup and discovery, 
 not realtime.
 
-0x5C00	 SSERIAL 0 8 bit Processor data register
-0x5C40	 SSERIAL 1 8 bit Processor data register
+0x5B00	 SSERIAL 0 8 bit Processor data register
+0x5B40	 SSERIAL 1 8 bit Processor data register
 ...
 
 SSERIAL 32 bit realtime registers
@@ -1139,40 +1297,52 @@ The command status register is used for writing requests and reading
 back status, it has a host-uProc doorbell for each channel so the 
 SSerial processor in notified of host writes
 
-0x5D00 	   SSERIAL 0 channel 0 command/status register
-0x5D04 	   SSERIAL 0 channel 1 command/status register
-0x5D08 	   SSERIAL 0 channel 2 command/status register
-0x5D0C 	   SSERIAL 0 channel 3 command/status register
+0x5C00 	   SSERIAL 0 channel 0 command/status register
+0x5C04 	   SSERIAL 0 channel 1 command/status register
+0x5C08 	   SSERIAL 0 channel 2 command/status register
+0x5C0C 	   SSERIAL 0 channel 3 command/status register
 ... 
 
-0x5D40 	   SSERIAL 1 channel 0 command/status register
-0x5D44 	   SSERIAL 1 channel 1 command/status register
-0x5D48 	   SSERIAL 1 channel 2 command/status register
-0x5D4C 	   SSERIAL 1 channel 3 command/status register
+0x5C40 	   SSERIAL 1 channel 0 command/status register
+0x5C44 	   SSERIAL 1 channel 1 command/status register
+0x5C48 	   SSERIAL 1 channel 2 command/status register
+0x5C4C 	   SSERIAL 1 channel 3 command/status register
 
 
-0x5E00 	   SSERIAL 0 channel 0 user interface register 0 
-0x5E04 	   SSERIAL 0 channel 1 user interface register 0 
-0x5E08 	   SSERIAL 0 channel 2 user interface register 0 
-0x5E0C 	   SSERIAL 0 channel 3 user interface register 0 
+0x5D00 	   SSERIAL 0 channel 0 user interface register 0 
+0x5D04 	   SSERIAL 0 channel 1 user interface register 0 
+0x5D08 	   SSERIAL 0 channel 2 user interface register 0 
+0x5D0C 	   SSERIAL 0 channel 3 user interface register 0 
 ... 
 
-0x5E40 	   SSERIAL 1 channel 0 user interface register 0 
-0x5E44 	   SSERIAL 1 channel 1 user interface register 0 
-0x5E48 	   SSERIAL 1 channel 2 user interface register 0 
-0x5E4C 	   SSERIAL 1 channel 3 user interface register 0 
+0x5D40 	   SSERIAL 1 channel 0 user interface register 0 
+0x5D44 	   SSERIAL 1 channel 1 user interface register 0 
+0x5D48 	   SSERIAL 1 channel 2 user interface register 0 
+0x5D4C 	   SSERIAL 1 channel 3 user interface register 0 
 
 
-0x5F00 	   SSERIAL 0 channel 0 user interface register 1 
-0x5F04 	   SSERIAL 0 channel 1 user interface register 1 
-0x5F08 	   SSERIAL 0 channel 2 user interface register 1 
-0x5F0C 	   SSERIAL 0 channel 3 user interface register 1 
+0x5E00 	   SSERIAL 0 channel 0 user interface register 1 
+0x5E04 	   SSERIAL 0 channel 1 user interface register 1 
+0x5E08 	   SSERIAL 0 channel 2 user interface register 1 
+0x5E0C 	   SSERIAL 0 channel 3 user interface register 1 
 ... 
 
-0x5F40 	   SSERIAL 1 channel 0 user interface register 1 
-0x5F44 	   SSERIAL 1 channel 1 user interface register 1 
-0x5F48 	   SSERIAL 1 channel 2 user interface register 1 
-0x5F4C 	   SSERIAL 1 channel 3 user interface register 1 
+0x5E40 	   SSERIAL 1 channel 0 user interface register 1 
+0x5E44 	   SSERIAL 1 channel 1 user interface register 1 
+0x5E48 	   SSERIAL 1 channel 2 user interface register 1 
+0x5E4C 	   SSERIAL 1 channel 3 user interface register 1 
+...
+
+0x5F00 	   SSERIAL 0 channel 0 user interface register 2 
+0x5F04 	   SSERIAL 0 channel 1 user interface register 2 
+0x5F08 	   SSERIAL 0 channel 2 user interface register 2 
+0x5F0C 	   SSERIAL 0 channel 3 user interface register 2 
+... 
+
+0x5F40 	   SSERIAL 1 channel 0 user interface register 2 
+0x5F44 	   SSERIAL 1 channel 1 user interface register 2 
+0x5F48 	   SSERIAL 1 channel 2 user interface register 2 
+0x5F4C 	   SSERIAL 1 channel 3 user interface register 2 
 
 
 
@@ -1201,24 +1371,24 @@ Didn't use byte enables for compatibility with other (non PCI)
 
 UART TX FIFO count register = number slots used in FIFO, 
 pushes less than one 32 bit word use a hole word slot, in other words, 
-TX FIFO is 16 32 bit words deep, but 16 one byte pushes will fill, 
+TX FIFO is 16 32 bit words deep, but 16 one byte pushes will fill the FIFO, 
 so TX FIFO capacity is 16 Bytes for byte pushes, but 64 bytes with 
 16 doubleword pushes.
 Writes to the FIFO count register clear the FIFO.
 
 0x6100 UART TXFIFO Count 0
-0x6104 UART TXFIFO Count 1
-0x6108 UART TXFIFO Count 2
-0x610C UART TXFIFO Count 3
+0x6110 UART TXFIFO Count 1
+0x6120 UART TXFIFO Count 2
+0x6130 UART TXFIFO Count 3
 ...
 
 TX Bitrate select register. TX bitrate is generated by a 20 bit 
-phase accumulator. Bitrate is: TXBitrate/1048576*ClockLow
+phase accumulator. Bitrate is: (TXBitrate_Register_Value/1048576)*ClockLow
 
 0x6200 UART TX Bitrate Register 0
-0x6204 UART TX Bitrate Register 1
-0x6208 UART TX Bitrate Register 2
-0x620C UART TX Bitrate Register 3
+0x6210 UART TX Bitrate Register 1
+0x6220 UART TX Bitrate Register 2
+0x6230 UART TX Bitrate Register 3
 ...
 
 UART TX mode register controls TXEnable and TXEnable timing (for half duplex)
@@ -1238,9 +1408,9 @@ Bit 6 = DriveEnableBit, If DriveEnableAuto is 0, controls Drive (
         for software control of Xmit drive)
 
 0x6300 UART TX Mode register 0
-0x6304 UART TX Mode register 1
-0x6308 UART TX Mode register 2
-0x630c UART TX Mode register 3
+0x6310 UART TX Mode register 1
+0x6320 UART TX Mode register 2
+0x6330 UART TX Mode register 3
 ...
 
 UART RX Data register, Different offsets pop different numbers of bytes 
@@ -1265,23 +1435,24 @@ I may eventually change this to use byte enables.
 0x643C UART RX Data 3 (POP 4 bytes)
 ...
 
-UART RX FIFO count register = number of bytes in RX FIFO
+UART RX FIFO count register = number of bytes in RX FIFO 
+(5 bits right justified, other bits are undefined)
 Writes to the RX FIFO count register clear RX FIFO
 
 0x6500 UART RXFIFO Count 0
-0x6504 UART RXFIFO Count 1
-0x6508 UART RXFIFO Count 2
-0x650C UART RXFIFO Count 3
+0x6510 UART RXFIFO Count 1
+0x6520 UART RXFIFO Count 2
+0x6530 UART RXFIFO Count 3
 ...
 
 UART RX Bitrate select register. RX bitrate is generated by a 20 bit 
 phase accumulator. 
-Bitrate is RXBitrate/1048576*ClockLow
+Bitrate is (RXBitrate_Register_Value/1048576)*ClockLow
 
 0x6600 UART RX Bitrate Register 0
-0x6604 UART RX Bitrate Register 0
-0x6608 UART RX Bitrate Register 0
-0x660C UART RX Bitrate Register 0
+0x6610 UART RX Bitrate Register 0
+0x6620 UART RX Bitrate Register 0
+0x6630 UART RX Bitrate Register 0
 ...
 
 RX MODE/STATUS Register
@@ -1298,9 +1469,9 @@ Bit 6 = RXMask, RO RXMASK status
 Bit 7 = FIFO Has Data
 
 0x6700 UART RX Mode/Status register 0
-0x6704 UART RX Mode/Status register 1
-0x6708 UART RX Mode/Status register 2
-0x670C UART RX Mode/Status register 3
+0x6710 UART RX Mode/Status register 1
+0x6720 UART RX Mode/Status register 2
+0x6730 UART RX Mode/Status register 3
 ...
 
 
@@ -1314,44 +1485,49 @@ Simple SSI interface:
 
 This is a simple SSI interface for absolute encoders
 
-SSI Data Register, right justifed. Writes to this location will start a
+SSI Data Register0, right justifed. Writes to this location will start a
 read cycle for the specific SSI interface addressed 
 
-0x6800 SSI data register 0
-0x6804 SSI data register 1
-0x6808 SSI data register 2
-0x680C SSI data register 3
+0x6800 SSI data register0 channel 0
+0x6804 SSI data register0 channel 1
+0x6808 SSI data register0 channel 2
+0x680C SSI data register0 channel 3
 ...
 
-SSIBitCountRegister: Set to number of SSI encoder bits
-In addition to the SSI bit count, the bit count register has 
+0x6900 SSI data register1 channel 0
+0x6904 SSI data register1 channel 1
+0x6908 SSI data register1 channel 2
+0x690C SSI data register1 channel 3
+...
+
+SSIControlRegister: Set to number of SSI encoder bits and SSI rate
+In addition to the SSI bit count, ans SSI rate, the control register has 
 3 additional control and status bits:
 
 Bit 0..5 =  SSI bit count
-Bit 6    =  Program Start Mask   If set, writes to SSIGlobalStart start a cycle
-Bit 7    =  Timer Start Mask     If set, rate generator edge starts a cycle 
+Bit 8    =  Program Start Mask   If set, writes to SSIGlobalStart start a cycle
+Bit 9    =  Timer Start Mask     If set, rate generator edge starts a cycle 
 ...
-Bit 31   =                       Busy Status, R/O, set at beginning of cycle
+Bit 11   =                       Busy Status, R/O, set at beginning of cycle
                                  cleared at end of cycle
+Bits 12..14			 Timer channel select
+Bits 16..31			 Sets shift frequency for SSI interface
 
-0x6900 SSI bit count register 0
-0x6904 SSI bit count register 1
-0x6908 SSI bit count register 2
-0x690C SSI bit count register 3
+The timer select register selects the desired timer output
+from the DPLL timer module: 0=Ref 1=timer1, 2=timer2, 3=timer3, 4=timer4
+The TStartMask must be set to enable timer starts.
+
+Shift rate is set via a 16 bit DDS. Shift frequency is 
+(CLockLow*SSIBitRate)/65536 For example with a 48 MHz clock 
+(4I68,5I22,5I23), A register value of 546 gives a ~400KHz shift clock
+
+0x6A00 SSI control register 0
+0x6A04 SSI control register 1
+0x6A08 SSI control register 2
+0x6A0C SSI control register 3
 ...
 
  
-SSI Bit Rate register. Sets shift frequency for SSI interface
-rate is set via a 16 bit DDS. Shift frequency is (CLockLow*SSIBitRate)/65536 
-For example with a 48 MHz clock (4I68,5I22,5I23), A register value of 546 
-gives a close to 400KHz shift clock
-
-0x6A00 SSI bit rate register 0
-0x6A04 SSI bit rate register 1
-0x6A08 SSI bit rate register 2
-0x6A0C SSI bit rate register 3
-...
-
 SSI Global Start register. Writes to this address start all SSI interfaces
 that have their Program Start Mask bit set.
 
@@ -1388,9 +1564,9 @@ Bit 0..15 = FIFO count
 Bit 24 = odd word waiting
 
 0x6D00  DAQFIFO 0 FIFO count 	  
-0x6D04  DAQFIFO 1 FIFO count 	  
-0x6D08  DAQFIFO 2 FIFO count 	  
-0x6D0C  DAQFIFO 3 FIFO count 	  
+0x6D40  DAQFIFO 1 FIFO count 	  
+0x6D80  DAQFIFO 2 FIFO count 	  
+0x6DC0  DAQFIFO 3 FIFO count 	  
 
 
 DAQFIFO mode/status register
@@ -1403,162 +1579,64 @@ Bits 16..31 = request threshold set to 0 for software access, some
               larger number for DMA or interrupt service routine access
 
 0x6E00  DAQFIFO 0 mode/status register
-0x6E04  DAQFIFO 1 mode/status register
-0x6E08  DAQFIFO 2 mode/status register
-0x6E0C  DAQFIFO 3 mode/status register
+0x6E40  DAQFIFO 1 mode/status register
+0x6E80  DAQFIFO 2 mode/status register
+0x6Ec0  DAQFIFO 3 mode/status register
+
+HM2DPLL
+
+This is a simple DPLL for generating timing events between periodic accesses.
+It can be useful for starting read cycles on devices that have a significant 
+aquisition time (SPI,SSI encoders, Fanuc serial pulsecoders etc). It also can be 
+used to remove jitter from read  and write cycles, if the module hardware allows
+latching read data on timer events or updating output latches on timing events
+4 timers with a resolution of access period/65536 are available.
+
+HM2DPLL registers:
+
+DPLL base rate = (clocklow/2^DDSSize*DPLLPreScale)*BaseRateRegisterValue
+ 
+0x7000	32 bit HM2DPLL BaseRate
+
+0x7100 DPLLPhaseError
+
+32 bit phase error, writes load the accumulator
 
 
+0x7200 DPLLControlRegister0
+
+Bits 0..23	On writes = PLimit (phase adjustment limit)
+     		On reads = Filtered Phase Error
+Bits 24..31	DPLL Prescale
  
 
-DPLL
+DPLLControlregister1
+   
+0x7300 DPLLControlregister1
 
-This is a simple DPLL for standalone rate generation and externally 
-syncronized rate generation. It consists of a 48 bit binary DDS followed by 
-a 16 bit divide by N counter, a phase error detector and a simple P+I loop.
+Bits 0..7	(Read Only) DDSSize 
+Bits 16..31	Filter Time constant
 
-DPLL registers:
+0x7400 DPLLTimer12
 
+Bits 0..15	Timer1 phase 
+Bits 16..31	Timer2 phase 
 
-DPLL DDS base frequency is set via these two registers. DDS base frequency is
-(ClockLow/2^48)*DDSFrequencyRegisterValue. 
+0x7500 DPLLTimer34
 
-DPLL Frequency low, Write only, low 32 bits of preset frequency.
+Bits 0..15	Timer3 phase 
+Bits 16..31	Timer4 phase
 
-0x7000 DPLL DDS Frequency register low 0
-0x7004 DPLL DDS Frequency low 1
-0x7008 DPLL DDS Frequency low 2
-0x700C DPLL DDS Frequency low 3
-...
-DPLL Frequency high, Write Only, high 16 bits of preset frequency, 
-right justified.
+Timer phase is advance from reference (sync) access time
+range is 0 to 65535/65536 DPLL period advance
 
-0x7100 DPLL Frequency high 0
-0x7104 DPLL Frequency high 1
-0x7108 DPLL Frequency high 2
-0x710C DPLL Frequency high 3
-...
+0x7600	DPLLSync
 
-DPLL Post Scale Divisor register, write only, divide preset frequency by N+1
+Read or writes here phase lock the DPLL to the host software periodic access.
+Write data is dont care, reads return phase error. If interpreted as a 
+signed number, Phase error is positive for late access and negative for 
+early access. Actual time error is (Phase_Error/2^32)*DPLL period.
 
-0x7200 DPLL Post Scale divisor 0
-0x7204 DPLL Post Scale divisor 1
-0x7208 DPLL Post Scale divisor 2
-0x720C DPLL Post Scale divisor 3
-...
-
-DPLL Rate adjust register, 32 bit read/write, DPLL integrated phase 
-correction to preset frequency
-
-0x7300 DPLL Rate adjust register 0
-0x7304 DPLL Rate adjust register 1
-0x7308 DPLL Rate adjust register 2
-0x730C DPLL Rate adjust register 3
-...
-
-DPLL Rate limit register, 32  bit write only, DPLL integrated phase limit. 
-Limits rate register value to +- limit value
-
-0x7400 DPLL Rate limit register 0
-0x7404 DPLL Rate limit register 1
-0x7408 DPLL Rate limit register 2
-0x740C DPLL Rate limit register 3
-...
-
-DPLL phase tweak register, 32 bit write only, DPLL phase tweak = P term
-added or subracted from DDS at sync edges depending on phase error sign
-
-0x7500 DPLL Phase tweak register 0
-0x7504 DPLL Phase tweak register 1
-0x7508 DPLL Phase tweak register 2
-0x750C DPLL Phase tweak register 3
-...
-
-DPLL rate tweak register, 32 bit write only, DPLL rate tweak = I term
-added or subracted from IRate at sync edges depending on phase error sign
-
-0x7600 DPLL Rate tweak register 0
-0x7604 DPLL Rate tweak register 1
-0x7608 DPLL Rate tweak register 2
-0x760C DPLL Rate tweak register 3
-...
-
-DPLL Count register, 32 bit read only, high order 32 bits of DDS
-
-0x7700 DPLL Count register 0
-0x7704 DPLL Count register 1
-0x7708 DPLL Count register 2
-0x770C DPLL Count register 3
-...
-
-DPLL DDS Phase error register, 32 bit read only, DDS phase error from 
-Most significant 32 bits of DDS
-
-0x7800 DPLL DDS Phase error register 0
-0x7804 DPLL DDS Phase error register 1
-0x7808 DPLL DDS Phase error register 2
-0x780C DPLL DDS Phase error register 3
-...
-
-DPLL Post scale Phase error register, 16 bit read only, right justified 
-
-0x7900 DPLL Post scale Phase error register 0
-0x7904 DPLL Post scale Phase error register 1
-0x7908 DPLL Post scale Phase error register 2
-0x790C DPLL Post scale Phase error register 3
-...
-
-DPLL Post scale count register, 32 bit read only 
-
-Bit 31 = SyncToggle toggles on every Sync input rising edge
-Bits 0..15 = PostScale count
-
-0x7A00 DPLL Post scale count register 0
-0x7A04 DPLL Post scale count register 1
-0x7A08 DPLL Post scale count register 2
-0x7A0C DPLL Post scale count register 3
-...
-
-DPLL Control register, 5 bits read/write, right justified 
-Bit 0 = FreeRun, if set use as free running DDS, that is, ignore Sync
-        if clear, use as normal DPLL
-Bit 1 = PostSync, if set enable post scaler phase detector
-Bit 2 = DDSSync, if set enable DDS phase detector
-Bit 3 = ForceLock, if set, DDS and Post scale counters are zeroed every Sync
-        edge
-Bit 4 = LowSync, if set use falling edge of sync instead of rising edge for
-        phase detector
-Bit 5 = SyncToggle, Read only, toggles on every Sync edge
-
-0x7B00 DPLL Control register 0
-0x7B04 DPLL Control register 1
-0x7B08 DPLL Control register 2
-0x7B0C DPLL Control register 3
-...
-
-DPLL Notes: 
-This is a simple linear/P+I type DPLL for generating phase locked
-clocks from a reference clock. It consists of a 48 bit binary DDS followed
-by a divide by N postscaler. To speed up initial lock, a ForceLock bit is 
-available in the control register. The DPLL can phase lock its Binary DDS 
-or the Postscaler output to the input Sync signal. 
-
-The integral gain of the DPLL is determined by the 'Rate Tweak' constant. 
-The proportional gain is determined by the 'Phase tweak' constant
-At every Sync edge the phase detector determines if the DPLL MSB edge
-is early (fast) or late (slow). 
-
-If Early, the rate tweak value is subtracted from the Rate Adjust 
-register, and the phase tweak constant is subtracted from the DDS count.
-If Late, the rate tweak value is added to the Rate Adjust register, and
-the phase tweak constant added to the DDS accumumlator.
-The early or late decision is based on the MSB of the DDS (If DDS sync 
-is chosen) or whether the Post scale counter is > 1/2 of the maximum post 
-scale count value (if Post scale sync is chosen).
-
-For most applications the DPLL will need software help for initial lock. A
-full proportional DPLL can be accomplished  by having the host read the phase 
-error and set the tweak values to K*absolute phase error. The DPLL will work 
-by itself with fixed tweak values but acquisition time may be long.
  
 
 Address Translation RAM 

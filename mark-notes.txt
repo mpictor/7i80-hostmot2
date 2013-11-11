@@ -1,0 +1,22 @@
+ISE v14.4
+
+files
+-----------------
+regmap                      - documentation
+TopEthernet16HostMot2.vhd   - top level file for 7i80*
+i80hd_x25card.vhd           - board-specific data
+7i80hd.ucf                  - board pinout
+PIN_SVST8_8IM2_72.vhd       - config pinout
+bufferedspi.vhd             - spi
+simplespi8x.vhd             - spi
+simplespix.vhd              - spi
+
+NumberOfModules.vhd counts the number of modules of a type specified in the config pinout (???)
+PIN_SVSSP4_6_7I46_48.vhd contains uses of SPITag, copy from it and add code that requires the pins to verify that it works???
+Or use BSPITag? need to ask PCW...
+
+
+ise complained about missing files, but synthesis does not fail:
+PIN_FASSSVTP4_4_4_72.vhd
+PIN_subserial_base_72.vhd
+mux1.vhd

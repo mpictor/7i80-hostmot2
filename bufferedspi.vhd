@@ -70,7 +70,7 @@ use IEEE.STD_LOGIC_UNSIGNED.ALL;
 entity bufferedspi is
     generic (
 		cswidth : integer := 4;
-		gatedcs : boolean
+		gatedcs : boolean := true
 		);    
 	port ( 
 		clk : in std_logic;
