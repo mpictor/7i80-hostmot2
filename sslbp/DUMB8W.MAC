@@ -1,0 +1,526 @@
+;Copyright (C) 2007 MESA Electronics.  All rights reserved.
+;DUMB8.MAC
+;after sta 3 nops if fetch from same location
+;after index load or inc 2 nops before @index fetch
+;after conditional jumps or ret 2 slots alway executed
+;no nops after unconditional jump
+
+;all macros are relative to memory locations
+
+.MSFIRST
+
+;redefine assembler stuff
+
+#define org  .ORG		
+#define ORG  .ORG		
+#define DB  .DB		
+#define db  .DB		
+#define DW  .DW		
+#define dw  .DW		
+#define EQU .EQU		
+#define equ .EQU		
+#define SET .set		
+#define set .SET		
+#define DS .BLOCK		
+#define ds .BLOCK	;define space		
+
+;suffixes
+s	equ	1	;double		one word
+d	equ	2	;double		one word
+q	equ	4	;quadruple	two words
+o	equ	8	;octtuple	three words
+
+;
+FALSE   equ     0
+TRUE    equ     ~ FALSE
+;
+
+;eom		equ	1024
+eom		equ	2048
+
+.macro	CLC
+	ADDB	zeros
+.endm
+
+	
+.macro	nops	;two pipeline delays
+	nop
+	nop
+.endm
+
+.macro	call	address
+	JSR	address
+.endm
+
+.macro	nots	address
+	LDIB	0FFh
+	XORTOB	address
+.endm	
+
+.macro	clrs	address
+	LDIB	0
+	STAB	address
+.endm	
+
+.macro	clrd	address
+	LDIB	0
+	STAB	address+0
+	STAB	address+1
+.endm	
+
+.macro	clrq	address
+	LDIB	0
+	STAB	address+0
+	STAB	address+1
+	STAB	address+2
+	STAB	address+3
+.endm	
+
+.macro	clro	address
+	LDIB	0
+	STAB	address+0
+	STAB	address+1
+	STAB	address+2
+	STAB	address+3
+	STAB	address+4
+	STAB	address+5
+	STAB	address+6
+	STAB	address+7
+.endm	
+
+.macro	sets	address
+	LDIB	0FFh
+	STAB	address
+.endm	
+
+.macro	setd	address
+	LDIB	0FFh
+	STAB	address+0
+	STAB	address+1
+.endm	
+
+.macro	jmpa	address
+	JMP	address
+.endm	
+
+;CAREFUL USING BECAUSE YOU MAY HAVE JUST STORED THE VALUE
+.macro	movs	src,dest	;move src to dest
+	LDAB	src
+	STAB	dest
+.endm
+
+.macro	movd	src,dest	;move src to dest
+	movs	src+0,dest+0
+	movs	src+1,dest+1
+.endm
+
+.macro	movq	src,dest	;move src to dest
+	movs	src+0,dest+0
+	movs	src+1,dest+1
+	movs	src+2,dest+2
+	movs	src+3,dest+3
+.endm
+
+.macro	incs	dest
+	LDIB	1
+	ADDTOB	dest
+.endm
+
+.macro	incd	dest
+	LDIB	1
+	ADDTOB	dest+0
+	LDIB	0
+	ADDCTOB	dest+1
+.endm
+
+.macro	incq	dest
+	LDIB	1
+	ADDTOB	dest+0
+	LDIB	0
+	ADDCTOB	dest+1
+	LDIB	0
+	ADDCTOB	dest+2
+	LDIB	0
+	ADDCTOB	dest+3
+.endm
+
+.macro	decs	dest
+	LDIB	255
+	ADDTOB	dest
+.endm
+
+.macro	brokendecd	dest
+	LDIB	255
+	ADDTOB	dest
+	LDIB	0
+	ADDCTOB	dest+1
+.endm
+
+.macro	decd	dest
+	LDIB	255
+	ADDTOB	dest
+	LDIB	255
+	ADDCTOB	dest+1
+.endm
+
+.macro	decq	dest
+	LDIB	255
+	ADDTOB	dest
+	LDIB	255
+	ADDCTOB	dest+1
+	LDIB	255
+	ADDCTOB	dest+2
+	LDIB	255
+	ADDCTOB	dest+3
+.endm
+
+.macro	subs	a,b,dest	;dest= a-b
+	LDAB	a
+	SUBB	b
+	STAB	dest
+.endm
+
+.macro	subd	a,b,dest	;dest= a-b
+	LDAB	a+0
+	SUBB	b+0
+	STAB	dest+0
+	LDAB	a+1
+	SUBCB	b+1
+	STAB	dest+1
+.endm
+
+.macro	subq	a,b,dest	;dest= a-b
+	LDAB	a+0
+	SUBB	b+0
+	STAB	dest+0
+	LDAB	a+1
+	SUBCB	b+1
+	STAB	dest+1
+	LDAB	a+2
+	SUBCB	b+2
+	STAB	dest+2
+	LDAB	a+3
+	SUBCB	b+3
+	STAB	dest+3
+.endm
+
+.macro	cmpq	a,b	;carry set if  a>b
+	LDAB	a+0
+	SUBB	b+0
+	LDAB	a+1
+	SUBCB	b+1
+	LDAB	a+2
+	SUBCB	b+2
+	LDAB	a+3
+	SUBCB	b+3
+.endm
+
+.macro	adds	a,b,dest	;dest=a+b
+	LDAB	a
+	ADDB	b
+	STAB	dest
+.endm
+
+.macro	addd	a,b,dest	;dest=a+b
+	LDAB	a+0
+	ADDB	b+0
+	STAB	dest+0
+	LDAB	a+1
+	ADDCB	b+1
+	STAB	dest+1
+.endm
+
+.macro	addtoq	a,dest	;dest=dest+a
+	LDAB	a+0
+	ADDTOB	dest+0
+	LDAB	a+1
+	ADDCTOB	dest+1
+	LDAB	a+2
+	ADDCTOB	dest+2
+	LDAB	a+3
+	ADDCTOB	dest+3
+.endm
+
+.macro	addq	a,b,dest	;dest=a+b
+	LDAB	a+0
+	ADDB	b+0
+	STAB	dest+0
+	LDAB	a+1
+	ADDCB	b+1
+	STAB	dest+1
+	LDAB	a+2
+	ADDCB	b+2
+	STAB	dest+2
+	LDAB	a+3
+	ADDCB	b+3
+	STAB	dest+3
+.endm
+
+.macro	adddq	ad,bq,destq	;dest=a+b
+	LDAB	ad+0
+	ADDB	bq+0
+	STAB	destq+0
+	LDAB	ad+1
+	ADDCB	bq+1
+	STAB	destq+1
+	LDIB	0
+	ADDCB	bq+2
+	STAB	destq+2
+	LDIB	0
+	ADDCB	bq+3
+	STAB	destq+3
+.endm
+
+.macro	loads	const,dest
+	LDIB	const	;hi bits needed
+	STAB	dest
+.endm
+
+
+.macro	loadd	const,dest
+	loads	(const>>0)&255,dest+0
+	loads	(const>>8)&255,dest+1
+.endm
+
+.macro	loadq	const,dest
+	loads	(const>>0)&255,dest+0
+	loads	(const>>8)&255,dest+1
+	loads	(const>>16)&255,dest+2
+	loads	(const>>24)&255,dest+3
+.endm
+
+.macro	CHECKEOM
+;Make sure we are not beyond the end of memory
+	.ECHO "\n"
+	.ECHO "There are "
+	.ECHO eom  - $
+	.ECHO " 'decimal' instructions left \n"
+
+	.IF     $ > eom
+	TOO_MUCH_CODE!!!!
+	.ENDIF
+	.ECHO "\n"
+.endm
+
+.macro ife@X	literial,reg	;literial = reg@X
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	LDIB	literial
+	SUBB	@X,reg
+	JMPNZ	LABEL
+.endm
+
+.macro ife	literial,reg	;literial = reg
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	LDIB	literial
+	SUBB	reg
+	JMPNZ	LABEL
+.endm
+
+.macro ifne	literial,reg	;literial <> reg
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	LDIB	literial
+	SUBB	reg
+	JMPZ	LABEL
+.endm
+
+.macro iflt	literal,reg	;if literal < reg
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	cmpjgte	literal,reg,LABEL
+.endm
+
+.macro iflte	literal,reg	;if literal <= reg
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	cmpjgt	literal,reg,LABEL
+.endm
+
+.macro ifgte	literal,reg	;if literal >= reg
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	cmpjlt	literal,reg,LABEL
+.endm
+
+.macro ifgt	literal,reg	;if literal > reg
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	cmpjlt	literal+1,reg,LABEL
+.endm
+
+.macro	cmpl	literal,reg
+	LDIB	literal
+	SUBB	reg
+.endm
+
+.macro	cmpjgte	literal,reg,address	;jump to address if reg > or = literal
+	cmpl	literal-1,reg		;doesn't change reg
+	jmpc	address			;if borrow carry is set	
+.endm
+
+.macro	cmpjgt	literal,reg,address	;jump to address if reg > literal
+	cmpl	literal,reg		;doesn't change reg
+	jmpc	address			;if borrow carry is set	
+.endm
+
+.macro	cmpjne	literal,reg,address	;jmp to address if reg <> literal
+	cmpl	literal,reg		;doesn't change reg
+	JMPNZ	address
+.endm
+
+.macro	cmpje	literal,reg,address	;jmp to address if reg = literal
+	cmpl	literal,reg		;doesn't change reg
+	JMPZ	address
+.endm
+
+.macro	loaddX	const
+	LDIB	(const>>0)&255
+	STAB	XL
+	LDIB	(const>>8)&255
+	STAB	XH
+.endm
+
+.macro	loaddY	const
+	LDIB	(const>>0)&255
+	STAB	YL
+	LDIB	(const>>8)&255
+	STAB	YH
+.endm
+
+.macro	movdX	regd
+	LDAB	regd+0
+	STAB	XL
+	LDAB	regd+1
+	STAB	XH
+.endm
+
+.macro	movdY	regd
+	LDAB	regd+0
+	STAB	YL
+	LDAB	regd+1
+	STAB	YH
+.endm
+
+.macro	shlo	o
+	LDAB	o+0
+	ADDTOB	o+0
+
+	LDAB	o+1
+	ADDCTOB	o+1
+
+	LDAB	o+2
+	ADDCTOB	o+2
+
+	LDAB	o+3
+	ADDCTOB	o+3
+
+	LDAB	o+4
+	ADDCTOB	o+4
+
+	LDAB	o+5
+	ADDCTOB	o+5
+
+	LDAB	o+6
+	ADDCTOB	o+6
+
+	LDAB	o+7
+	ADDCTOB	o+7
+.endm
+
+.macro	shlq	q
+	LDAB	q+0
+	ADDTOB	q+0
+
+	LDAB	q+1
+	ADDCTOB	q+1
+
+	LDAB	q+2
+	ADDCTOB	q+2
+
+	LDAB	q+3
+	ADDCTOB	q+3
+.endm
+
+.macro	REDOshrq	q
+	LDAB	q+3
+	ADDB	zero_byte	;clc
+	RCRB	
+	STAB	q+3
+
+	LDAB	q+2
+	RCRB	
+	STAB	q+2
+
+	LDAB	q+1
+	RCRB	
+	STAB	q+1
+
+	LDAB	q+0
+	RCRB	
+	STAB	q+0
+.endm
+
+.macro	setlsb	dest
+	LDIB	1
+	ORTOB	dest
+.endm
+
+;for signed mul: xor msb of both and save, abs both, mpy, negate if saved true
+
+;mixed multiply
+.macro	muldq	ad,bq		;ad * bd = bq ;ad not changed
+	movd	bq,bq+2		;move to high 2 bytes
+	clrd	bq		;clear low results acc here
+	for	muldivcount_byte,16
+		shlq	bq		;if bit was one add it in
+		ifc
+			adddq	ad,bq,bq
+		endif
+ 	next	muldivcount_byte
+.endm
+
+;mixed divide, result invalid if divisor ad=0 or if quotient >65535
+.macro	divqd	aq,bd		;aq / bd = aq, remainder in aq+2
+;works
+ for	muldivcount_byte,16
+	shlq	aq
+	ifnc				;if carry check for subtract
+		subd	aq+2,bd,aq+2
+		ifc			;if borrow carry is cleared too far
+			addd	aq+2,bd,aq+2	;oops... underflow, restore
+		else
+			incs	aq	;sucessful, set lsb
+		endif
+	else
+		subd	aq+2,bd,aq+2
+		incs	aq	;sucessful, set lsb
+	endif
+ next	muldivcount_byte
+.endm
+ 
+;mixed divide, result invalid if divisor ad=0 or if quotient >65535
+.macro	divoq	ao,bq		;ao / bq = ao, remainder in ao+4
+;works
+ for	muldivcount_byte,32
+	shlo	ao
+	ifnc				;if carry check for subtract
+		subq	ao+4,bq,ao+4
+		ifc			;if borrow carry is cleared too far
+;			addq	ao+4,bq,ao+4	;oops... underflow, restore
+			addtoq	bq,ao+4
+		else
+			incs	ao	;sucessful, set lsb
+		endif
+	else
+		subd	ao+4,bq,ao+4
+		incs	ao	;sucessful, set lsb
+	endif
+ next	muldivcount_byte
+.endm
+ 
+;fixed decd and decq bug
+;rewrote divoq with addtoq
+;added ife@X	
+

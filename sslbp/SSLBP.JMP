@@ -1,0 +1,1070 @@
+.macro	dochannel
+	ldib	jumptable
+	addb	@X,chanstate_byte
+	PUSH
+	nop
+	nop
+	nop
+	RET	;jmp@R
+
+jumptable
+	jmp	doreset_enum
+	jmp	dostarttimer_enum	
+	jmp	dowaittimeout_enum
+	jmp	dorequestcookie_enum
+	jmp	dogetcookie_enum
+	jmp	dosetlbptimeout_enum
+	jmp	dochecksetlbptimeout_enum
+	jmp	doclrlbpstatus_enum
+	jmp	docheckclrlbpstatus_enum
+	jmp	dorequestlbpstatus_enum
+	jmp	dogetlbpstatus_enum
+	jmp	dochecklbpstatus_enum
+	jmp	dorequestunitnumber_enum
+	jmp	dogetunitnumber_enum
+	jmp	dorequestid0_enum
+	jmp	dogetid0_enum
+	jmp	dorequestid1_enum
+	jmp	dogetid1_enum
+	jmp	dorequestid2_enum
+	jmp	dogetid2_enum
+	jmp	dorequestid3_enum
+	jmp	dogetid3_enum
+	jmp	docheckid0_enum
+	jmp	docheckid1_enum
+
+	jmp	doclear7I64faults_enum
+	jmp	docheck7I64faults_enum
+
+;generic
+	jmp	dosetswmode_enum
+	jmp	docheckswmode_enum
+
+	jmp	dorequestdiscovery_enum
+	jmp	dogetdiscovery_enum
+
+	jmp	docleargen_enum
+	jmp	docheckcleargen_enum
+
+	jmp	dosetgenclrfaults_enum
+	jmp	dochksetgenclrfaults_enum
+	jmp	doreqgenclrfaults_enum
+	jmp	dogetgenclrfaults_enum
+	jmp	doreqgenfaults_enum
+	jmp	dogetgenfaults_enum
+	jmp	dochkgenfaults_enum
+
+	jmp	dosetclrfaults_enum
+	jmp	dochecksetclrfaults_enum
+	jmp	dorequestclrfaults_enum
+	jmp	dogetclrfaults_enum
+	jmp	dorequestfaults_enum
+	jmp	dogetfaults_enum
+	jmp	docheckfaults_enum
+	jmp	doclearsetpoint_enum
+	jmp	docheckclearsetpoint_enum
+	jmp	dosetpidena_enum
+	jmp	dochecksetpidena_enum
+	jmp	dorequestpidon_enum
+	jmp	dogetpidon_enum
+	jmp	docheckpidon_enum
+	jmp	dorequestpidonfaults_enum
+	jmp	dogetpidonfaults_enum
+	jmp	docheckpidonfaults_enum
+	jmp	dosetwatchdog_enum
+	jmp	dochecksetwatchdog_enum
+	jmp	doblather0_enum	;wait for doorbell
+	jmp	doblather1_enum
+	jmp	dosend8I20_enum
+	jmp	dorecv8I20_enum	
+	jmp	dosend7I64_enum
+	jmp	dorecv7I64_enum	
+	jmp	dosendLBP_enum
+	jmp	dorecvLBP_enum
+	jmp	dosendgeneric_enum
+	jmp	dorecvgeneric_enum	
+
+dosend8I20_enum	
+	ldab	requestbits_byte
+	andb	whichchanbits_byte
+	ifnz
+		logerrors
+		send8I20rpcstring
+		loads@X	recv8I20_enum,chanstate_byte
+	endif
+	jmp	finish
+
+dorecv8I20_enum	
+	ldab	@X,chanRPCrecvsize_byte
+	call	recvstring
+	ifnz
+		clrrequest	;always clrrequest 
+
+		ldab	@X,statusl_const
+		stab	@T,remstatus_uint+0
+		ldab	@X,statush_const
+		stab	@T,remstatus_uint+1
+
+		ldab	@X,faultl_const
+		stab	@T,remfault_uint+0
+		ldab	@X,faulth_const
+		stab	@T,remfault_uint+1
+
+		orb	@X,faultl_const
+		ifnz	
+			setstatus	remfaultbit_const
+		endif
+
+		ldab	@X,temperaturel_const
+		stab	@T,remtemperature_uint+0
+		ldab	@X,temperatureh_const
+		stab	@T,remtemperature_uint+1
+
+		ldab	@X,busvl_const
+		stab	@T,voltage_uint+0
+		ldab	@X,busvh_const
+		stab	@T,voltage_uint+1
+
+		ldab	@X,chanerror_byte
+		ifz
+			clrinvalid
+		endif
+		clrnotdone
+
+		loads@X	send8I20_enum,chanstate_byte
+	else
+		call	checktimer
+		ifnc	;timer expired
+			clrrequest	;always clrrequest 
+			loads@X	send8I20_enum,chanstate_byte
+		endif
+	endif
+	jmp	finish
+
+doblather0_enum	
+	logerrors
+	ldab	whichchanbits_byte
+	ortob	blatherbits_byte
+
+	sendcleargenstring
+
+	loads@X	blather1_enum,chanstate_byte
+	jmp	finish
+
+doblather1_enum	
+	ldab	@X,chanRPCrecvsize_byte
+	call	recvstring
+	ifnz	;n chars there
+		measureRPCtime
+
+		clrstatus	noblatherbit_const
+		clrnotready
+		clrnotstart
+
+		ldab	requestbits_byte
+		andb	whichchanbits_byte
+		ifnz
+			ldib	timeoutfudge_const
+			addb	@X,chanmeasuredtime_byte;use measured time
+			stab	@X,chantimeout_byte
+
+			clearrecvbuffer
+			ldab	@X,changeneric_byte
+			ifnz
+				loads@X	sendgeneric_enum,chanstate_byte
+			else
+				ldib	id0_const
+				subb	@X,chanid_byte
+				ifz
+					loads@X	send8I20_enum,chanstate_byte
+				else
+					ldib	id1_const
+					subb	@X,chanid_byte
+					ifz
+						loads@X	send7I64_enum,chanstate_byte
+					endif
+				endif
+			endif
+		else
+			loads@X	blather0_enum,chanstate_byte
+		endif
+	else
+		call	checktimer
+		ifnc	;timer expired
+			ldab	requestbits_byte
+			andb	whichchanbits_byte
+			ifnz
+				clrrequest
+			endif				
+
+			ldib	toomanyerrorbit_const
+			andb	@X,chanerrorlog_byte
+			ifz
+				loads@X	blather0_enum,chanstate_byte
+			endif
+		endif
+	endif
+	jmp	finish
+
+dosend7I64_enum		
+	ldab	requestbits_byte
+	andb	whichchanbits_byte
+	ifnz
+		logerrors
+		send7I64rpcstring
+		loads@X	recv7I64_enum,chanstate_byte
+	endif
+	jmp	finish
+
+dorecv7I64_enum	
+	ldab	@X,chanRPCrecvsize_byte
+	call	recvstring
+	ifnz
+		clrrequest	;always clrrequest 
+
+		ldab	@X,inbits_const+0
+		stab	@T,inbits_ulong+0
+		ldab	@X,inbits_const+1
+		stab	@T,inbits_ulong+1
+		ldab	@X,inbits_const+2
+		stab	@T,inbits_ulong+2
+
+		ldib	8h	;watchdog has bitten
+		andb	@X,inbits_const+3	;status
+		ifnz	
+			setstatus	remfaultbit_const
+		endif
+
+		ldib	0
+		stab	@T,inbits_ulong+3
+		ldab	@X,ain1ain0_const+0
+		stab	@T,ain1ain0_ulong+0
+		ldab	@X,ain1ain0_const+1
+		stab	@T,ain1ain0_ulong+1
+		ldab	@X,ain1ain0_const+2
+		stab	@T,ain1ain0_ulong+2
+		ldab	@X,ain1ain0_const+3
+		stab	@T,ain1ain0_ulong+3
+		ldab	@X,chanerror_byte
+		ifz
+			clrinvalid
+		endif
+
+		clrnotdone
+
+		loads@X	send7I64_enum,chanstate_byte
+	else	;only check if still waiting
+		call	checktimer 
+		ifnc	;timer expired
+			clrrequest	;always clrrequest 
+			loads@X	send7I64_enum,chanstate_byte
+		endif
+	endif
+	jmp	finish
+
+doreset_enum
+	call	clearfaults
+	ldib	0				;clear rxmask 
+	stab	@Z,rxmode_byte			;clear rxerrors
+	stab	@Z,rxfifocount_byte
+	loads@X	starttimer_enum,chanstate_byte
+	ldab	starttimeout_byte
+	stab	@X,chantimeout_byte
+	jmp	finish
+
+dostarttimer_enum
+	call	starttimer
+	loads@X	waittimeout_enum,chanstate_byte
+	jmp	finish
+
+dowaittimeout_enum
+	ldab	hardwaretimer_uint+0
+	subb	@X,chanstarttime_uint+0
+	stab	deltatime_uint+0
+
+	ldab	hardwaretimer_uint+1
+	subcb	@X,chanstarttime_uint+1
+	stab	deltatime_uint+1
+
+	ldab	@X,chantimeout_byte
+	subb	deltatime_uint+0
+	ifc
+		loads@X	requestcookie_enum,chanstate_byte
+	endif
+	jmp	finish
+
+dorequestcookie_enum
+	sendcookiestring
+	loads@X	getcookie_enum,chanstate_byte
+	jmp	finish
+
+dogetcookie_enum
+	call	checktimer
+	ifnc	;timed out
+		loads@X	starttimer_enum,chanstate_byte
+	else
+		ldib	1
+		call	recvstring
+		ifnz
+			ldib	LBPCOOKIECODE_byte
+			subb	@X
+			ifz	;ok
+				loads@X	setlbptimeout_enum,chanstate_byte
+			else
+				deadendincatX	chancookiecount_byte
+				seterror	cookieerrorbit_const
+				loads@X		starttimer_enum,chanstate_byte
+			endif		
+		endif
+	endif
+	jmp	finish
+
+doclrlbpstatus_enum	
+	sendclrlbpstatusstring	
+	loads@X	checkclrlbpstatus_enum,chanstate_byte
+	jmp	finish
+
+docheckclrlbpstatus_enum	
+	call	recvstring0
+	ifnz
+		loads@X	requestlbpstatus_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestlbpstatus_enum
+	sendrequestlbpstatusstring
+	loads@X	getlbpstatus_enum,chanstate_byte
+	jmp	finish
+
+dogetlbpstatus_enum
+	ldib	1
+	call	recvstring
+	ifnz	
+		loads@X	checklbpstatus_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dochecklbpstatus_enum
+	ldab	@X
+	ifz
+		loads@X	requestunitnumber_enum,chanstate_byte
+	else
+		seterror	remfaulterrorbit_const
+		deadendincatX	chanremfaultcount_byte
+		loads@X	starttimer_enum,chanstate_byte	;try again
+	endif
+	jmp	finish
+
+dorequestunitnumber_enum
+	sendrequestunitnumberstring
+	loads@X	getunitnumber_enum,chanstate_byte
+	jmp	finish
+
+dogetunitnumber_enum
+	ldib	4	;32 bit number
+	call	recvstring
+	ifnz
+		ldab	@X,0
+		stab	@T,unitnum_ulong+0
+		ldab	@X,1
+		stab	@T,unitnum_ulong+1
+		ldab	@X,2
+		stab	@T,unitnum_ulong+2
+		ldab	@X,3
+		stab	@T,unitnum_ulong+3
+		loads@X	requestid0_enum,chanstate_byte
+	else
+		call	checktimer
+		ifnc	;failed
+;here if setupmode with no unitnumber rpc
+			ife	LBPstart_const,starttype_byte
+				loads@X	requestid0_enum,chanstate_byte
+			endif
+		endif
+	endif
+	jmp	finish
+
+dorequestid0_enum
+	sendid0string
+	loads@X	getid0_enum,chanstate_byte
+	jmp	finish
+
+dogetid0_enum
+	ldib	1
+	call	recvstring
+	ifnz
+		loads@X	requestid1_enum,chanstate_byte	
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestid1_enum
+	ldab	@X	;readhere because Y is post incremented
+	stab	@X,chanwhatiam_ulong+0
+	sendid1string
+	loads@X	getid1_enum,chanstate_byte
+	jmp	finish
+
+dogetid1_enum
+	ldib	1
+	call	recvstring
+	ifnz
+		loads@X	requestid2_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestid2_enum
+	ldab	@X
+	stab	@X,chanwhatiam_ulong+1
+	sendid2string
+	loads@X	getid2_enum,chanstate_byte
+	jmp	finish
+
+dogetid2_enum
+	ldib	1
+	call	recvstring
+	ifnz
+		loads@X	requestid3_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestid3_enum
+	ldab	@X
+	stab	@X,chanwhatiam_ulong+2
+	sendid3string
+	loads@X	getid3_enum,chanstate_byte
+	jmp	finish
+
+dogetid3_enum
+	ldib	1
+	call	recvstring
+	ifnz
+		loads@X	checkid0_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+docheckid0_enum
+	loads@X	checkid1_enum,chanstate_byte	;try next
+	ldab	@X,chanwhatiam_ulong+0
+	stab	@T,whoiam_ulong+0
+	ldab	@X,chanwhatiam_ulong+1
+	stab	@T,whoiam_ulong+1
+	ldab	@X,chanwhatiam_ulong+2
+	stab	@T,whoiam_ulong+2
+	
+	ldab	@X
+	stab	@X,chanwhatiam_ulong+3
+	stab	@T,whoiam_ulong+3
+
+	ldab	whatisupport0_ulong+0
+	subb	@X,chanwhatiam_ulong+0
+	stab	temp_byte
+	datapipe
+
+	ldab	whatisupport0_ulong+1
+	subcb	@X,chanwhatiam_ulong+1
+	ortob	temp_byte
+	datapipe
+
+	ldab	whatisupport0_ulong+2
+	subcb	@X,chanwhatiam_ulong+2
+	ortob	temp_byte
+	datapipe
+
+	ldab	whatisupport0_ulong+3
+	subcb	@X,chanwhatiam_ulong+3
+	orb	temp_byte
+	ifz
+		ldib	id0_const
+		stab	@X,chanid_byte
+		loads@X	8,chanRPCrecvsize_byte
+		loads@X	4,chanRPCxmitsize_byte
+		
+		ife	normalstart_const,starttype_byte ;continue 8i20
+			clrstatus	noidbit_const
+			loads@X	setclrfaults_enum,chanstate_byte
+		endif
+
+		ife	LBPstart_const,starttype_byte
+			clrstatus	noblatherbit_const|noidbit_const|remfaultbit_const
+			clrnotready
+			clrnotstart
+			ldab	runtimeout_byte
+			stab	@X,chantimeout_byte
+			loads@X	sendLBP_enum,chanstate_byte
+		endif
+	endif
+	jmp	finish
+
+docheckid1_enum
+	ldab	@X
+	stab	@X,chanwhatiam_ulong+3
+
+	ldab	whatisupport1_ulong+0
+	subb	@X,chanwhatiam_ulong+0
+	stab	temp_byte
+	datapipe
+
+	ldab	whatisupport1_ulong+1
+	subcb	@X,chanwhatiam_ulong+1
+	ortob	temp_byte
+	datapipe
+
+	ldab	whatisupport1_ulong+2
+	subcb	@X,chanwhatiam_ulong+2
+	ortob	temp_byte
+	datapipe
+
+	ldab	whatisupport1_ulong+3
+	subcb	@X,chanwhatiam_ulong+3
+	orb	temp_byte
+	ifz
+		ldib	id1_const
+		stab	@X,chanid_byte
+		loads@X	8,chanRPCrecvsize_byte
+		loads@X	4,chanRPCxmitsize_byte
+
+		ife	normalstart_const,starttype_byte
+			clrstatus	noidbit_const|remfaultbit_const
+			loads@X	clear7I64faults_enum,chanstate_byte
+		endif
+
+		ife	LBPstart_const,starttype_byte
+			clrstatus	noblatherbit_const|noidbit_const|remfaultbit_const
+			clrnotready
+			clrnotstart
+			ldab	runtimeout_byte
+			stab	@X,chantimeout_byte
+			loads@X	sendLBP_enum,chanstate_byte
+		endif
+	else	;not 8I20 or 7I64
+		loads@X	true_const,changeneric_byte
+		loads@X	setswmode_enum,chanstate_byte
+	endif
+	jmp	finish
+
+doclear7I64faults_enum
+	send7I64clearfaultstring
+	loads@X	check7I64faults_enum,chanstate_byte
+	jmp	finish
+
+docheck7I64faults_enum
+	ldab	@X,chanRPCrecvsize_byte
+	call	recvstring
+	ifnz
+		loads@X	blather0_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dosetswmode_enum	
+	sendsetswmodestring
+	loads@X	checkswmode_enum,chanstate_byte
+	jmp	finish
+
+docheckswmode_enum	
+	call	recvstring0	;r37
+	ifnz
+		loads@X	requestdiscovery_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestdiscovery_enum	
+	sendrequestdiscoverystring
+	loads@X	getdiscovery_enum,chanstate_byte
+	jmp	finish
+
+dogetdiscovery_enum	
+	ldib	6	;readsize,writesize,nparams,pitch,base
+	call	recvstring
+	ifnz
+		ldab	@X,0
+		stab	@X,chanRPCrecvsize_byte
+		ldab	@X,1
+		stab	@X,chanRPCxmitsize_byte
+		ldab	@X,2
+		stab	@T,PTOC_uint+0	;new names R33
+		ldab	@X,3
+		stab	@T,PTOC_uint+1
+		ldab	@X,4
+		stab	@T,GTOC_uint+0
+		ldab	@X,5
+		stab	@T,GTOC_uint+1
+
+		ife	normalstart_const,starttype_byte
+			clrstatus	noidbit_const
+			loads@X	cleargen_enum,chanstate_byte
+		endif
+
+		ife	LBPstart_const,starttype_byte
+			clrstatus	noblatherbit_const|noidbit_const|remfaultbit_const
+			clrnotready
+			clrnotstart
+			ldab	runtimeout_byte
+			stab	@X,chantimeout_byte
+			loads@X	sendLBP_enum,chanstate_byte
+		endif
+	else
+		call	checktimer
+;rev 34 workaround
+		ifnc	;failed
+			ife	LBPstart_const,starttype_byte
+				clrstatus	noblatherbit_const|noidbit_const|remfaultbit_const
+				clrnotready
+				clrnotstart
+				ldab	runtimeout_byte
+				stab	@X,chantimeout_byte
+				loads@X	sendLBP_enum,chanstate_byte
+			endif
+		endif
+	endif
+	jmp	finish
+
+docleargen_enum				;1eh
+	sendcleargenstring
+	loads@X	checkcleargen_enum,chanstate_byte
+	jmp	finish
+
+docheckcleargen_enum			;1fh
+	ldab	@X,chanRPCrecvsize_byte
+	call	recvstring
+	ifnz
+		loads@X	setgenclrfaults_enum,chanstate_byte
+	else
+		call	checktimer
+		ifnc	;timer expired
+			loads@X	cleargen_enum,chanstate_byte ;try again
+		endif
+	endif
+	jmp	finish
+
+dosetgenclrfaults_enum			;20h
+	sendsetgenclrfaultstring
+	loads@X	chksetgenclrfaults_enum,chanstate_byte
+	jmp	finish
+
+dochksetgenclrfaults_enum		;21h
+	call	recvstring0
+	ifnz
+		loads@X	reqgenclrfaults_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+doreqgenclrfaults_enum			;22h
+	sendreqgenclrfaultstring
+	loads@X	getgenclrfaults_enum,chanstate_byte
+	jmp	finish
+
+dogetgenclrfaults_enum			;23h
+	ldib	lbpclrfaultsize_const
+	call	recvstring
+	ifnz
+		ldab	@X,0
+		ifz	;clearfault flag cleared
+			loads@X	reqgenfaults_enum,chanstate_byte
+		else	;try again
+			loads@X	reqgenclrfaults_enum,chanstate_byte
+		endif
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+doreqgenfaults_enum			;24h
+	sendreqgenfaultstring
+	loads@X	getgenfaults_enum,chanstate_byte
+	jmp	finish
+
+dogetgenfaults_enum			;25h
+	ldib	lbpfaultsize_const
+	call	recvstring
+	ifnz
+		loads@X	chkgenfaults_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dochkgenfaults_enum			;26h
+	ldab	@X,0
+	ifz
+		clrstatus	remfaultbit_const
+		loads@X	blather0_enum,chanstate_byte
+	else	
+		stab	@X,chanremfault_byte	;rev 36
+		deadendincatX	chanremfaultcount_byte
+		seterror	remfaulterrorbit_const
+		loads@X		reqgenfaults_enum,chanstate_byte;24h
+	endif
+	jmp	finish
+
+;fault checking
+dosetclrfaults_enum	
+	sendsetclrfaultstring
+	loads@X	checksetclrfaults_enum,chanstate_byte
+	jmp	finish
+
+dochecksetclrfaults_enum	
+	call	recvstring0
+	ifnz
+		loads@X	requestclrfaults_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestclrfaults_enum	
+	sendrequestclrfaultstring
+	loads@X	getclrfaults_enum,chanstate_byte
+	jmp	finish
+
+dogetclrfaults_enum	
+	ldib	clrfaultsize_const
+	call	recvstring
+	ifnz
+		ldab	@X,0
+		orb	@X,1
+		ifz	;clearfault flag cleared
+			loads@X	requestfaults_enum,chanstate_byte
+		else	;try again
+			loads@X	requestclrfaults_enum,chanstate_byte
+		endif
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestfaults_enum	
+	sendrequestfaultstring
+	loads@X	getfaults_enum,chanstate_byte
+	jmp	finish
+
+dogetfaults_enum
+	ldib	faultsize_const
+	call	recvstring
+	ifnz
+		loads@X	checkfaults_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+docheckfaults_enum	
+	ldab	@X,0
+	orb	@X,1
+	stab	@X,chanremfault_byte	;rev 32
+	ifz
+		loads@X	clearsetpoint_enum,chanstate_byte
+	else	
+		deadendincatX	chanremfaultcount_byte
+		seterror	remfaulterrorbit_const
+	endif
+	jmp	finish
+
+doclearsetpoint_enum	
+	sendclearsetpointstring
+	loads@X	checkclearsetpoint_enum,chanstate_byte
+	jmp	finish
+
+docheckclearsetpoint_enum	
+	call	recvstring0
+	ifnz
+		loads@X	setpidena_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dosetpidena_enum	
+	sendsetpidenastring
+	loads@X	checksetpidena_enum,chanstate_byte
+	jmp	finish
+
+dochecksetpidena_enum	
+	call	recvstring0
+	ifnz
+		loads@X	requestpidon_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dorequestpidon_enum	
+	sendrequestpidonstring
+	loads@X	getpidon_enum,chanstate_byte
+	jmp	finish
+
+dogetpidon_enum	
+	ldib	2
+	call	recvstring
+	ifnz
+		loads@X	checkpidon_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+docheckpidon_enum	
+	ldab	@X,0
+	orb	@X,1
+	ifz	;try again
+		loads@X	requestpidon_enum,chanstate_byte
+	else	;go on
+		loads@X	requestpidonfaults_enum,chanstate_byte
+	endif
+	jmp	finish
+
+dorequestpidonfaults_enum	
+	sendrequestfaultstring
+	loads@X	getpidonfaults_enum,chanstate_byte
+	jmp	finish
+
+dogetpidonfaults_enum	
+	ldib	faultsize_const
+	call	recvstring
+	ifnz
+		loads@X	checkpidonfaults_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+docheckpidonfaults_enum	
+	ldab	@X,0
+	orb	@X,1
+	ifz
+		clrstatus	remfaultbit_const
+		loads@X	setwatchdog_enum,chanstate_byte
+	else
+		deadendincatX	chanremfaultcount_byte
+		seterror	remfaulterrorbit_const
+	endif
+	jmp	finish
+
+dosetwatchdog_enum	
+	sendsetwatchdogstring
+	loads@X	checksetwatchdog_enum,chanstate_byte
+	jmp	finish
+
+dochecksetwatchdog_enum	
+	call	recvstring0
+	ifnz
+;;		loads@X	false_const,chanchktoomanyerrs_byte
+		loads@X	blather0_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+
+dosendLBP_enum
+	ldab	requestbits_byte
+	andb	whichchanbits_byte
+	ifnz
+		logerrors
+		sendLBPstring
+		loads@X	recvLBP_enum,chanstate_byte
+	endif
+	jmp	finish
+
+dorecvLBP_enum	
+	ldab	@X,chanLBPdatasize_byte
+	call	recvstring
+	ifnz
+		clrrequest	;always clrrequest 
+
+;;		ldab	@X,chanLBPdatasize_byte
+;;		stab	temp_byte
+;;		datapipe
+;;		datapipe
+;;		datapipe
+		ife@X	8,chanLBPdatasize_byte
+;;		ife	8,temp_byte
+			ldab	@X,0
+			stab	@T,LBPreaddatal_ulong+0
+			ldab	@X,1
+			stab	@T,LBPreaddatal_ulong+1
+			ldab	@X,2
+			stab	@T,LBPreaddatal_ulong+2
+			ldab	@X,3
+			stab	@T,LBPreaddatal_ulong+3
+			ldab	@X,4
+			stab	@T,LBPreaddatah_ulong+0
+			ldab	@X,5
+			stab	@T,LBPreaddatah_ulong+1
+			ldab	@X,6
+			stab	@T,LBPreaddatah_ulong+2
+			ldab	@X,7
+			stab	@T,LBPreaddatah_ulong+3
+		endif
+		ife@X	4,chanLBPdatasize_byte
+;;		ife	4,temp_byte
+			ldab	@X,0
+			stab	@T,LBPreaddatal_ulong+0
+			ldab	@X,1
+			stab	@T,LBPreaddatal_ulong+1
+			ldab	@X,2
+			stab	@T,LBPreaddatal_ulong+2
+			ldab	@X,3
+			stab	@T,LBPreaddatal_ulong+3
+			ldib	0
+			stab	@T,LBPreaddatah_ulong+0
+			stab	@T,LBPreaddatah_ulong+1
+			stab	@T,LBPreaddatah_ulong+2
+			stab	@T,LBPreaddatah_ulong+3
+		endif
+		ife@X	2,chanLBPdatasize_byte
+;;		ife	2,temp_byte
+			ldab	@X,0
+			stab	@T,LBPreaddatal_ulong+0
+			ldab	@X,1
+			stab	@T,LBPreaddatal_ulong+1
+			ldib	0
+			stab	@T,LBPreaddatal_ulong+2
+			stab	@T,LBPreaddatal_ulong+3
+			stab	@T,LBPreaddatah_ulong+0
+			stab	@T,LBPreaddatah_ulong+1
+			stab	@T,LBPreaddatah_ulong+2
+			stab	@T,LBPreaddatah_ulong+3
+		endif
+		ife@X	1,chanLBPdatasize_byte
+;;		ife	1,temp_byte
+			ldab	@X,0
+			stab	@T,LBPreaddatal_ulong+0
+			ldib	0
+			stab	@T,LBPreaddatal_ulong+1
+			stab	@T,LBPreaddatal_ulong+2
+			stab	@T,LBPreaddatal_ulong+3
+			stab	@T,LBPreaddatah_ulong+0
+			stab	@T,LBPreaddatah_ulong+1
+			stab	@T,LBPreaddatah_ulong+2
+			stab	@T,LBPreaddatah_ulong+3
+		endif
+		ldab	@X,chanerror_byte	;rev 34
+		ifz	;ok
+			clrinvalid
+		endif
+		clrnotdone
+		loads@X	sendLBP_enum,chanstate_byte
+	else
+		call	checktimer
+		ifnc	;timer expired
+;;			clrnotdone
+			clrrequest	;always clrrequest 
+
+			loads@X	sendLBP_enum,chanstate_byte
+
+			ldib	toomanyerrorbit_const
+			andb	@X,chanerrorlog_byte
+			ifz
+				clrinvalid	;not too many
+			endif
+		endif
+	endif
+	jmp	finish
+;;;	
+
+dosetlbptimeout_enum
+	sendsetLBPtimeoutstring
+	loads@X	checksetlbptimeout_enum,chanstate_byte
+	jmp	finish
+
+dochecksetlbptimeout_enum
+	call	recvstring0
+	ifnz
+		loads@X	clrlbpstatus_enum,chanstate_byte
+	else
+		call	checktimerrestart
+	endif
+	jmp	finish
+	
+dosendgeneric_enum	
+	ldab	requestbits_byte
+	andb	whichchanbits_byte
+	ifnz
+		logerrors
+		sendgenericrpcstring
+		loads@X	recvgeneric_enum,chanstate_byte
+	endif
+	jmp	finish
+
+dorecvgeneric_enum	
+	ldab	@X,chanRPCrecvsize_byte
+	call	recvstring
+	ifnz
+		clrrequest	;always clrrequest 
+;first byte is always remote fault
+		ldab	@X,getreaddata0_byte
+		stab	@X,chanremfault_byte
+		ifnz	
+			setstatus	remfaultbit_const
+			seterror	remfaulterrorbit_const
+		else
+			clrerror	remfaulterrorbit_const
+		endif
+
+;get rest of data
+		ldab	@X,getreaddata1_byte
+		stab	@T,putreaddata0_byte
+		ldab	@X,getreaddata2_byte
+		stab	@T,putreaddata1_byte
+		ldab	@X,getreaddata3_byte
+		stab	@T,putreaddata2_byte
+		ldab	@X,getreaddata4_byte
+		stab	@T,putreaddata3_byte
+		ldab	@X,getreaddata5_byte
+		stab	@T,putreaddata4_byte
+		ldab	@X,getreaddata6_byte
+		stab	@T,putreaddata5_byte
+		ldab	@X,getreaddata7_byte
+		stab	@T,putreaddata6_byte
+		ldab	@X,getreaddata8_byte
+		stab	@T,putreaddata7_byte
+		ldab	@X,getreaddata9_byte
+		stab	@T,putreaddata8_byte
+		ldab	@X,getreaddata10_byte
+		stab	@T,putreaddata9_byte
+		ldab	@X,getreaddata11_byte
+		stab	@T,putreaddata10_byte
+		ldab	@X,getreaddata12_byte
+		stab	@T,putreaddata11_byte
+
+		ldab	@X,chanerror_byte
+		ifz
+			clrinvalid
+		endif
+
+		clrnotdone
+
+		loads@X	sendgeneric_enum,chanstate_byte
+	else
+		call	checktimer
+		ifnc	;timer expired
+			clrrequest	;always clrrequest 
+			loads@X	sendgeneric_enum,chanstate_byte
+		endif
+	endif
+	jmp	finish
+
+finish
+.endm
+;docheck states are folded into if
+;doput states are folded up
+;removed docheckmode_enum	
+;removed put8I20
+

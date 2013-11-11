@@ -1,0 +1,204 @@
+;Copyright (C) 2005 MESA Electronics.  All rights reserved.
+;STRUCT.MAC FOR SWEET 16
+
+.macro ifc		;if carry
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	JMPNC	LABEL
+.endm
+
+.macro ifnc		;if no carry
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	JMPC	LABEL
+.endm
+
+.macro ifz		;if zero flag
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	JMPNZ	LABEL
+.endm
+
+.macro ifnz		;if not zero flag
+	UNIQUE	; This label goes to the false-clause, or the endif.
+	DUP
+	JMPZ	LABEL
+.endm
+
+.macro else
+	UNIQUE  ; This label goes to the endif.
+	DUP
+	jmpa	LABEL
+	SWAP    ; So this is the false-clause.
+LABEL
+.endm
+
+.macro endif
+LABEL
+.endm
+
+;****************************** WHILE WEND ************************************
+
+.macro whilee	literal,reg	;while equal
+	UNIQUE ; The 'loop' label
+	DUP
+LABEL
+	;test condition
+	UNIQUE ; The 'done' label
+	DUP
+	cmpjne	literal,reg,LABEL
+.endm
+
+.macro whilene	literal,reg	;while not equal
+	UNIQUE ; The 'loop' label
+	DUP
+LABEL
+	;test condition
+	UNIQUE ; The 'done' label
+	DUP
+	cmpje	literal,reg,LABEL
+.endm
+
+.macro whilenz	reg	;while not equal
+	UNIQUE ; The 'loop' label
+	DUP
+LABEL
+	;test condition
+	UNIQUE ; The 'done' label
+	DUP
+	ldab	reg
+	jmpz	LABEL
+.endm
+
+.macro whilez	reg	;while not equal
+	UNIQUE ; The 'loop' label
+	DUP
+LABEL
+	;test condition
+	UNIQUE ; The 'done' label
+	DUP
+	ldab	reg
+	jmpnz	LABEL
+.endm
+
+.macro wend
+	SWAP
+	jmpa LABEL
+LABEL
+.endm
+
+;****************************** BEGIN ****************************************
+.macro begin		;begin 
+	UNIQUE ; The 'begin' label
+	DUP
+LABEL
+.endm
+
+.macro again		;always
+	jmpa	LABEL
+.endm
+
+.macro untilz		;until zero 
+	JMPNZ	LABEL
+.endm
+
+.macro untilnz		;until not zero 
+	JMPZ	LABEL
+.endm
+
+.macro untilc		;until carry 
+	JMPNC	LABEL
+.endm
+
+.macro untilnc		;until not carry 
+	JMPC	LABEL
+.endm
+
+;****************************** FOR NEXT **************************************
+
+.macro	forr	counter,var
+	UNIQUE	; The 'loop' label
+	DUP
+	movs	var,counter 
+LABEL
+.endm
+
+.macro	nextr	counter
+	decs	counter
+	JMPNZ	LABEL	;back to for
+.endm
+
+.macro	for	counter,count
+	UNIQUE	; The 'loop' label
+	DUP
+	loads	count,counter 
+LABEL
+.endm
+
+.macro	next	counter
+	decs	counter
+	JMPNZ	LABEL	;back to for
+;changed from requiring carry to checking for zero
+.endm
+
+.macro	ford	counter,count
+	UNIQUE	; The 'loop' label
+	DUP
+;	loadd	count-1,counter		;load -1 
+	loadd	count,counter		;load -1 
+LABEL
+.endm
+
+.macro	nextd	counter
+	decd	counter
+;	JMPNC	LABEL	;back to for
+	JMPNZ	LABEL	;back to for
+.endm
+
+;****************************** CASE ****************************************
+;use select for large cases
+;use if endif for small cases (slow and short)
+;use nested if else endif for small cases (fastest)
+;last case has a redundant jmp
+
+.macro begincase
+	UNIQUE ; The 'endcase' label
+.endm
+
+.macro case	literal,reg	;case literal=reg
+	UNIQUE ; The 'endc' label	;4t if false, 5t if true
+	DUP
+	cmpjne	literal,reg,LABEL
+.endm
+
+.macro endc
+	SWAP
+	DUP
+	jmpa	LABEL
+	SWAP
+LABEL
+.endm
+
+.macro case@X	literal,reg	;case literal=@X,reg
+	UNIQUE ; The 'endc' label	;4t if false, 5t if true
+	DUP
+
+	ldib	literal
+	subb	@X,reg		;doesn't change reg
+	JMPNZ	LABEL
+.endm
+
+.macro endc@X
+	SWAP
+	DUP
+	jmpa	LABEL
+	SWAP
+LABEL
+.endm
+
+.macro endcase
+LABEL
+.endm
+
+;fixed bug in ifp ifn can't skip around unconditional jumps
+

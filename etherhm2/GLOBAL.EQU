@@ -1,0 +1,21 @@
+;global.equ
+
+;redefine assembler stuff
+
+#define org  .ORG		
+#define ORG  .ORG		
+#define DB  .DB		
+#define db  .DB		
+#define DW  .DW		
+#define dw  .DW		
+#define EQU .EQU		
+#define equ .EQU		
+#define SET .set		
+#define set .SET		
+#define DS .BLOCK		
+#define ds .BLOCK	;define space		
+;
+FALSE   equ     0
+TRUE    equ     ~ FALSE
+;
+

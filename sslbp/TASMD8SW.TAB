@@ -1,0 +1,290 @@
+"TASM Dumb8SQW TABLE  "
+/* This is the instruction set definition table for the Dumb8SQW
+/* 
+/* No (unconditional jumps or calls) or (reads with side effects) in the 2 instruction shadow of conditional jumps
+/* Three pipes required after stab or xxto of variable until ldab
+/* Three pipes required after stab of Index until ldab	@
+/* 
+/* Gilbert Eldredge, CopyRight MESA Electronics, 2011.
+/* 
+/* iiii WInn nnnn nnnn DIRECT INSTRUCTIONS
+/* iiii is instruction, Writeback, Indirect,
+/* 4 index registers 
+/* addresses extended to 11 bits 7-2009
+/* added SHLN,SHRN 5-2011
+/* reduced address field
+/* added to instructions ldatob left out for simple decode
+/*--------------------------------------------------------------*/
+.MSFIRST
+.WORDADDRS
+
+/*INSTR	ARGS	OPCODE	BYTES	MOD	CLASS 	SHIFT 	OR */
+/* r : operate opcode
+/* x : don't care
+/* k : constant
+/* a : address
+/* p : page
+/* o : offset
+
+
+/* 0000 0000 xxxx xxxx
+/*NO OPERAND
+NOP		""	0000	2	NOP	1	0	0	/*nop
+DATAPIPE	""	0001	2	NOP	1	0	0	/*nop
+INDEXPIPE	""	0002	2	NOP	1	0	0	/*nop
+JUMPSHADOWPIPE	""	0003	2	NOP	1	0	0	/*nop
+
+/* 0000 0001 kkkk kkkk
+/*IMMEDIATE BYTE OPERAND 
+LDIB	*	0100	2	T1	1	0	00FF	/*load immediate
+
+/* 0000 00rr xxxx xxxx
+/*NO OPERAND
+RCLB	""	0200	2	NOP	1	0	0	/*rotate with carry left
+RCRB	""	0300	2	NOP	1	0	0	/*rotate with carry right
+
+SHLN	""	0280	2	NOP	1	0	0	/*shift 4 bits left shift in zero and shift out carry
+SHRN	""	0380	2	NOP	1	0	0	/*shift 4 bits right shift in zero and shift out carry
+
+/* 0000 rrii ixxx xxxx
+LDAB	XL	0400	2	NOP	1	0	0	/*move XL to acc
+LDAB	YL	0500	2	NOP	1	0	0	/*move YL to acc
+LDAB	ZL	0600	2	NOP	1	0	0	/*move ZL to acc
+LDAB	TL	0700	2	NOP	1	0	0	/*move TL to acc
+LDAB	XH	0480	2	NOP	1	0	0	/*move XH to acc
+LDAB	YH	0580	2	NOP	1	0	0	/*move YH to acc
+LDAB	ZH	0680	2	NOP	1	0	0	/*move ZH to acc
+LDAB	TH	0780	2	NOP	1	0	0	/*move TH to acc
+ 
+STAB	XL	0800	2	NOP	1	0	0	/*move acc to XL
+STAB	YL	0900	2	NOP	1	0	0	/*move acc to YL
+STAB	ZL	0A00	2	NOP	1	0	0	/*move acc to XL
+STAB	TL	0B00	2	NOP	1	0	0	/*move acc to TL
+STAB	XH	0880	2	NOP	1	0	0	/*move acc to XH
+STAB	YH	0980	2	NOP	1	0	0	/*move acc to YH
+STAB	ZH	0A80	2	NOP	1	0	0	/*move acc to ZH
+STAB	TH	0B80	2	NOP	1	0	0	/*move acc to TH
+
+ADDIX	*	0C00	2	T1	1	0	7F	/*add immediate to X
+ADDIY	*	0D00	2	T1	1	0	7F	/*add immediate to Y
+ADDIZ	*	0E00	2	T1	1	0	7F	/*add immediate to X
+ADDIT	*	0F00	2	T1	1	0	7F	/*add immediate to Y
+
+RTT     ""      0C80    2       NOP     1       0       0       /*save return address in temp
+STAB	RL	0D80	2	NOP	1	0	0	/*load acc from indirect reg x
+TTR     ""      0E80    2       NOP     1       0       0       /*restore return address from temp
+STAB	RH	0F80	2	NOP	1	0	0	/*load acc from indirect reg y
+
+/*11 BIT OPERAND, PROGRAM ADDRESS FOR JUMPS
+/* iiii 0aaa aaaa aaaa DIRECT INSTRUCTIONS
+JMP	*	1000	2	T1	1	0	07FF	/*
+JMPNZ	*	2000	2	T1	1	0	07FF
+JMPZ	*	3000	2	T1	1	0	07FF
+JMPNC	*	4000	2	T1	1	0	07FF	/*
+JMPC	*	5000	2	T1	1	0	07FF	/*
+JSR	*	6000	2	T1	1	0	07FF	/*10 bits only
+
+/*INDIRECT 8 BIT OFFSET, 
+/* iiii 0100 0000 0000 INDIRECT INSTRUCTIONS
+LDAB	@X	7400	2	NOP	1	0	0000	/*load acc from operand
+ORB	@X	8400	2	NOP	1	0	0000
+XORB	@X	9400	2	NOP	1	0	0000
+ANDB	@X	A400	2	NOP	1	0	0000
+STAB	@X	B400	2	NOP	1	0	0000	/*store acc to operand
+ADDB	@X	C400	2	NOP	1	0	0000
+ADDCB	@X	D400	2	NOP	1	0	0000
+SUBB	@X	E400	2	NOP	1	0	0000
+SUBCB	@X	F400	2	NOP	1	0	0000
+
+/*INDIRECT 8 BIT OPERAND, 
+/* iiii 0100 oooo oooo INDIRECT INSTRUCTIONS
+LDAB	@X,*	7400	2	T1	1	0	007F	/*load acc from operand
+ORB	@X,*	8400	2	T1	1	0	007F
+XORB	@X,*	9400	2	T1	1	0	007F
+ANDB	@X,*	A400	2	T1	1	0	007F
+STAB	@X,*	B400	2	T1	1	0	007F	/*store acc to operand
+ADDB	@X,*	C400	2	T1	1	0	007F
+ADDCB	@X,*	D400	2	T1	1	0	007F
+SUBB	@X,*	E400	2	T1	1	0	007F
+SUBCB	@X,*	F400	2	T1	1	0	007F
+
+/*INDIRECT 8 BIT OFFSET, 
+/* iiii 1100 0000 0000 INDIRECT INSTRUCTIONS
+ORTOB	@X	8C00	2	NOP	1	0	0000
+XORTOB	@X	9C00	2	NOP	1	0	0000
+ANDTOB	@X	AC00	2	NOP	1	0	0000
+STATOB	@X	BC00	2	NOP	1	0	0000	/*store acc to operand
+ADDTOB	@X	CC00	2	NOP	1	0	0000
+ADDCTOB	@X	DC00	2	NOP	1	0	0000
+SUBTOB	@X	EC00	2	NOP	1	0	0000
+SUBCTOB	@X	FC00	2	NOP	1	0	0000
+
+/*INDIRECT 8 BIT OPERAND, 
+/* iiii 1100 oooo oooo INDIRECT INSTRUCTIONS
+ORTOB	@X,*	8C00	2	T1	1	0	007F
+XORTOB	@X,*	9C00	2	T1	1	0	007F
+ANDTOB	@X,*	AC00	2	T1	1	0	007F
+STATOB	@X,*	BC00	2	T1	1	0	007F	/*store acc to operand
+ADDTOB	@X,*	CC00	2	T1	1	0	007F
+ADDCTOB	@X,*	DC00	2	T1	1	0	007F
+SUBTOB	@X,*	EC00	2	T1	1	0	007F
+SUBCTOB	@X,*	FC00	2	T1	1	0	007F
+
+/* iiii 0101 0000 0000 INDIRECT INSTRUCTIONS
+LDAB	@Y	7580	2	NOP	1	0	0000	/*load acc from operand
+ORB	@Y	8580	2	NOP	1	0	0000
+XORB	@Y	9580	2	NOP	1	0	0000
+ANDB	@Y	A580	2	NOP	1	0	0000
+STAB	@Y	B580	2	NOP	1	0	0000	/*store acc to operand
+ADDB	@Y	C580	2	NOP	1	0	0000
+ADDCB	@Y	D580	2	NOP	1	0	0000
+SUBB	@Y	E580	2	NOP	1	0	0000
+SUBCB	@Y	F580	2	NOP	1	0	0000
+
+/* iiii 0101 oooo oooo INDIRECT INSTRUCTIONS
+LDAB	@Y,*	7580	2	T1	1	0	007F	/*load acc from operand
+ORB	@Y,*	8580	2	T1	1	0	007F
+XORB	@Y,*	9580	2	T1	1	0	007F
+ANDB	@Y,*	A580	2	T1	1	0	007F
+STAB	@Y,*	B580	2	T1	1	0	007F	/*store acc to operand
+ADDB	@Y,*	C580	2	T1	1	0	007F
+ADDCB	@Y,*	D580	2	T1	1	0	007F
+SUBB	@Y,*	E580	2	T1	1	0	007F
+SUBCB	@Y,*	F580	2	T1	1	0	007F
+
+/* iiii 1101 0000 0000 INDIRECT INSTRUCTIONS
+ORTOB	@Y	8D80	2	NOP	1	0	0000
+XORTOB	@Y	9D80	2	NOP	1	0	0000
+ANDTOB	@Y	AD80	2	NOP	1	0	0000
+STATOB	@Y	BD80	2	NOP	1	0	0000	/*store acc to operand
+ADDTOB	@Y	CD80	2	NOP	1	0	0000
+ADDCTOB	@Y	DD80	2	NOP	1	0	0000
+SUBTOB	@Y	ED80	2	NOP	1	0	0000
+SUBCTOB	@Y	FD00	2	NOP	1	0	0000
+
+/* iiii 1101 oooo oooo INDIRECT INSTRUCTIONS
+ORTOB	@Y,*	8D80	2	T1	1	0	007F
+XORTOB	@Y,*	9D80	2	T1	1	0	007F
+ANDTOB	@Y,*	AD80	2	T1	1	0	007F
+STATOB	@Y,*	BD80	2	T1	1	0	007F	/*store acc to operand
+ADDTOB	@Y,*	CD80	2	T1	1	0	007F
+ADDCTOB	@Y,*	DD80	2	T1	1	0	007F
+SUBTOB	@Y,*	ED80	2	T1	1	0	007F
+SUBCTOB	@Y,*	FD80	2	T1	1	0	007F
+
+/* iiii 0110 0000 0000 INDIRECT INSTRUCTIONS
+LDAB	@Z	7600	2	NOP	1	0	0000	/*load acc from operand
+ORB	@Z	8600	2	NOP	1	0	0000
+XORB	@Z	9600	2	NOP	1	0	0000
+ANDB	@Z	A600	2	NOP	1	0	0000
+STAB	@Z	B600	2	NOP	1	0	0000	/*store acc to operand
+ADDB	@Z	C600	2	NOP	1	0	0000
+ADDCB	@Z	D600	2	NOP	1	0	0000
+SUBB	@Z	E600	2	NOP	1	0	0000
+SUBCB	@Z	F600	2	NOP	1	0	0000
+
+/* iiii 0110 oooo oooo INDIRECT INSTRUCTIONS
+LDAB	@Z,*	7600	2	T1	1	0	007F	/*load acc from operand
+ORB	@Z,*	8600	2	T1	1	0	007F
+XORB	@Z,*	9600	2	T1	1	0	007F
+ANDB	@Z,*	A600	2	T1	1	0	007F
+STAB	@Z,*	B600	2	T1	1	0	007F	/*store acc to operand
+ADDB	@Z,*	C600	2	T1	1	0	007F
+ADDCB	@Z,*	D600	2	T1	1	0	007F
+SUBB	@Z,*	E600	2	T1	1	0	007F
+SUBCB	@Z,*	F600	2	T1	1	0	007F
+
+/* iiii 1110 0000 0000 INDIRECT INSTRUCTIONS
+ORTOB	@Z	8E00	2	NOP	1	0	0000
+XORTOB	@Z	9E00	2	NOP	1	0	0000
+ANDTOB	@Z	AE00	2	NOP	1	0	0000
+STATOB	@Z	BE00	2	NOP	1	0	0000	/*store acc to operand
+ADDTOB	@Z	CE00	2	NOP	1	0	0000
+ADDCTOB	@Z	DE00	2	NOP	1	0	0000
+SUBTOB	@Z	EE00	2	NOP	1	0	0000
+SUBCTOB	@Z	FE00	2	NOP	1	0	0000
+
+/* iiii 1110 oooo oooo INDIRECT INSTRUCTIONS
+ORTOB	@Z,*	8E00	2	T1	1	0	007F
+XORTOB	@Z,*	9E00	2	T1	1	0	007F
+ANDTOB	@Z,*	AE00	2	T1	1	0	007F
+STATOB	@Z,*	BE00	2	T1	1	0	007F	/*store acc to operand
+ADDTOB	@Z,*	CE00	2	T1	1	0	007F
+ADDCTOB	@Z,*	DE00	2	T1	1	0	007F
+SUBTOB	@Z,*	EE00	2	T1	1	0	007F
+SUBCTOB	@Z,*	FE00	2	T1	1	0	007F
+
+/* iiii 0111 0000 0000 INDIRECT INSTRUCTIONS
+LDAB	@T	7700	2	NOP	1	0	0000	/*load acc from operand
+ORB	@T	8700	2	NOP	1	0	0000
+XORB	@T	9700	2	NOP	1	0	0000
+ANDB	@T	A700	2	NOP	1	0	0000
+STAB	@T	B700	2	NOP	1	0	0000	/*store acc to operand
+ADDB	@T	C700	2	NOP	1	0	0000
+ADDCB	@T	D700	2	NOP	1	0	0000
+SUBB	@T	E700	2	NOP	1	0	0000
+SUBCB	@T	F700	2	NOP	1	0	0000
+
+/* iiii 0111 oooo oooo INDIRECT INSTRUCTIONS
+LDAB	@T,*	7700	2	T1	1	0	007F	/*load acc from operand
+ORB	@T,*	8700	2	T1	1	0	007F
+XORB	@T,*	9700	2	T1	1	0	007F
+ANDB	@T,*	A700	2	T1	1	0	007F
+STAB	@T,*	B700	2	T1	1	0	007F	/*store acc to operand
+ADDB	@T,*	C700	2	T1	1	0	007F
+ADDCB	@T,*	D700	2	T1	1	0	007F
+SUBB	@T,*	E700	2	T1	1	0	007F
+SUBCB	@T,*	F700	2	T1	1	0	007F
+
+/* iiii 1111 0000 0000 INDIRECT INSTRUCTIONS
+ORTOB	@T	8F00	2	NOP	1	0	0000
+XORTOB	@T	9F00	2	NOP	1	0	0000
+ANDTOB	@T	AF00	2	NOP	1	0	0000
+STATOB	@T	BF00	2	NOP	1	0	0000	/*store acc to operand
+ADDTOB	@T	CF00	2	NOP	1	0	0000
+ADDCTOB	@T	DF00	2	NOP	1	0	0000
+SUBTOB	@T	EF00	2	NOP	1	0	0000
+SUBCTOB	@T	FF00	2	NOP	1	0	0000
+
+/* iiii 1111 oooo oooo INDIRECT INSTRUCTIONS
+ORTOB	@T,*	8F00	2	T1	1	0	007F
+XORTOB	@T,*	9F00	2	T1	1	0	007F
+ANDTOB	@T,*	AF00	2	T1	1	0	007F
+STATOB	@T,*	BF00	2	T1	1	0	007F	/*store acc to operand
+ADDTOB	@T,*	CF00	2	T1	1	0	007F
+ADDCTOB	@T,*	DF00	2	T1	1	0	007F
+SUBTOB	@T,*	EF00	2	T1	1	0	007F
+SUBCTOB	@T,*	FF00	2	T1	1	0	007F
+
+/*11 BIT return addresses
+/* iiii 1aaa aaaa aaaa DIRECT INSTRUCTIONS
+RET	""	1800	2	NOP	1	0	0
+RETNZ	""	2800	2	NOP	1	0	0
+RETZ	""	3800	2	NOP	1	0	0
+RETNC	""	4800	2	NOP	1	0	0
+RETC	""	5800	2	NOP	1	0	0
+RET@	""	6800	2	NOP	1	0	0	/*??
+
+/*MEMORY REF INST 10 BIT OPERAND ADDRESS 
+/* iiii 00nn nnnn nnnn DIRECT INSTRUCTIONS
+LDAB	*	7000	2	T1	1	0	03FF	/*load acc from operand
+ORB	*	8000	2	T1	1	0	03FF
+XORB	*	9000	2	T1	1	0	03FF
+ANDB	*	A000	2	T1	1	0	03FF
+STAB	*	B000	2	T1	1	0	03FF	/*store acc to operand
+ADDB	*	C000	2	T1	1	0	03FF
+ADDCB	*	D000	2	T1	1	0	03FF
+SUBB	*	E000	2	T1	1	0	03FF
+SUBCB	*	F000	2	T1	1	0	03FF
+
+/*MEMORY REF TO INST 10 BIT OPERAND ADDRESS 
+/* iiii 10nn nnnn nnnn DIRECT INSTRUCTIONS
+ORTOB	*	8800	2	T1	1	0	03FF
+XORTOB	*	9800	2	T1	1	0	03FF
+ANDTOB	*	A800	2	T1	1	0	03FF
+STATOB	*	B800	2	T1	1	0	03FF	/*store acc to operand
+ADDTOB	*	C800	2	T1	1	0	03FF
+ADDCTOB	*	D800	2	T1	1	0	03FF
+SUBTOB	*	E800	2	T1	1	0	03FF
+SUBCTOB	*	F800	2	T1	1	0	03FF
+

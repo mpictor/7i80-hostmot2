@@ -1,0 +1,923 @@
+;startbits are set for a channel to run, bit is cleared if it didnot start to stop
+;notstartbits are cleared if ready or error and are checked to clear start command reg
+;notreadybits are cleared when ready
+;
+.macro	NUdebug n
+	ldib	n
+	stab	320h	;low byte
+	ldab	SP	
+	stab	321h
+	pop
+;	push
+	nop
+	stab	322h
+	ldib	0EEh
+	stab	323h
+	begin
+	again
+.endm
+
+;************************ MACROS ********************************************
+.macro	initmem
+	ldib	0	;clear ram
+	stab	XL
+	stab	XH
+
+	begin
+		ldib	0
+		stab	@X
+		addiX	1
+		ldab	XH
+		rcrb
+;ok		rcrb
+	untilc
+
+	stab	hostdoorbell_byte	;clear doorbell
+  	loads	1,one_byte	
+; 	loads	3,three_byte	
+  	loads	true_const,true_byte
+;	loads	55h,cookie_byte	
+
+	movs	hardnchannel_byte,numberofchannels_byte
+
+	loadq	whatisupport0_const,whatisupport0_ulong
+	loadq	whatisupport1_const,whatisupport1_ulong
+
+	loads	interfacetype_const,interfacetype_byte
+	loads	majorrevision_const,majorrevision_byte
+	loads	minorrevision_const,minorrevision_byte
+	loads	interfacewidth_const,interfacewidth_byte
+;	loads	0,gpioinputbits_byte
+;	loads	0,gpiooutputbits_byte
+	loads	channel0_ptr,channelstart_byte
+	loads	channelstride_const,channelstride_byte
+	loads	processortype_const,processortype_byte
+
+;default baudrates
+ 	loaddX	channel0_ptr
+	indexpipe
+	forr	loop_byte,numberofchannels_byte
+		loadq@X	defaultbaudrate_const,chanbaudrate_ulong
+	 	addiX	channelstride_const		
+	indexpipe
+	indexpipe
+	nextr	loop_byte
+.endm
+
+.macro	logerrors
+	ldab	@X,chanerror_byte
+	ortob	@X,chanerrorlog_byte	;or in errors
+	loads@X	0,chanerror_byte	;clear for next time
+.endm
+
+.macro	measureRPCtime
+	ldab	hardwaretimer_uint+0
+	subb	@X,chanstarttime_uint+0
+	stab	@X,chanmeasuredtime_byte
+.endm
+
+.macro	BADDmov*16@Xq	sourceq,destq
+	ldab	@X,sourceq+0		
+	SHLN	;*16	shiftin 0
+	stab	destq+0
+
+	ldab	@X,sourceq+0
+	SHRN
+	stab	destq+1
+
+	ldab	@X,sourceq+1
+	SHRN
+	stab	destq+2
+
+	ldab	@X,sourceq+2
+	SHRN
+	stab	destq+3
+
+	ldab	@X,sourceq+1
+	SHLN
+	ortob	destq+1
+
+	ldab	@X,sourceq+2
+	SHLN
+	ortob	destq+2
+
+	ldab	@X,sourceq+3
+	SHLN
+	ortob	destq+3
+.endm
+
+.macro	clearrecvbuffer
+	ldib	0
+	stab	@X,getreaddata0_byte
+	stab	@X,getreaddata1_byte
+	stab	@X,getreaddata2_byte
+	stab	@X,getreaddata3_byte
+	stab	@X,getreaddata4_byte
+	stab	@X,getreaddata5_byte
+	stab	@X,getreaddata6_byte
+	stab	@X,getreaddata7_byte
+	stab	@X,getreaddata8_byte
+	stab	@X,getreaddata9_byte
+	stab	@X,getreaddata10_byte
+	stab	@X,getreaddata11_byte
+	stab	@X,getreaddata12_byte
+	stab	@X,getreaddata13_byte
+	stab	@X,getreaddata14_byte
+	stab	@X,getreaddata15_byte
+.endm
+
+.macro	commandcomplete
+	clrs	commandtoprocess_byte
+	stab	commandregl_byte	;clear command
+.endm
+
+.macro	checkforcommand	;WMRDSTTTCCCCCCC ;Writebit, roM access, Requestbit, Doit, Start, Type, Channelmask
+;sets commandtoprocess 
+	ldib	doorbellmask_const
+	andb	hostdoorbell_byte	;new command
+	ifnz
+		ldab	commandtoprocess_byte
+		ifz	;normal
+			ldab	commandregh_byte;hardware
+			stab	YH		; high part of address in YH
+			stab	commandtoprocess_byte
+
+			ldab	commandregl_byte;hardware
+			stab	YL		; low part of address in YL
+			stab	hostdoorbell_byte	;clear doorbell
+			processcommand
+		else	;allow stop
+			ife	stopstart_const,commandregh_byte
+				ldab	commandregh_byte	;hardware
+				stab	commandtoprocess_byte
+				stab	hostdoorbell_byte	;clear doorbell
+			endif
+		endif
+	endif
+.endm
+
+.macro	doit
+	ldab	notreadybits_byte
+	xorb	true_byte	
+	andb	commandregl_byte
+
+	stab	requestbits_byte
+	stab	invalidbits_byte
+	stab	notdonebits_byte
+	clrstatus	errorstatbit_const|remfaultbit_const
+.endm
+
+.macro	normalstart
+	loadq	timerrate_const,divisor_ulong
+	call	settimersub
+	loads	starttimeout_const,starttimeout_byte
+	movs	commandregh_byte,starttype_byte
+
+	ldab	startbits_byte
+	xorb	true_byte
+	andb	commandregl_byte
+	stab	notreadybits_byte	;not ready on new channels
+	stab	notstartbits_byte
+
+	ldab	commandregl_byte
+	ortob	startbits_byte		;only new channels
+.endm
+
+.macro	stopstart
+	ldab	commandregl_byte
+	stab	stopbits_byte
+	ifz	;legacy
+		clrs	initialized_byte	;force global init
+	endif
+.endm
+
+.macro	LBPstart
+	loadq	setuptimerrate_const,divisor_ulong
+	call	settimersub
+	loads	startstimeout_const,starttimeout_byte
+	loads	startsruntimeout_const,runtimeout_byte
+	movs	commandregh_byte,starttype_byte
+
+	ldab	startbits_byte
+	xorb	true_byte
+	andb	commandregl_byte
+	stab	notreadybits_byte	;not ready on new channels
+	stab	notstartbits_byte
+
+	ldab	commandregl_byte
+	ortob	startbits_byte		;only new channels
+.endm
+
+.macro	host
+	ldib	writemask_const
+	andb	commandregh_byte
+	ifnz	;write
+		ldab	datareg_byte		
+		stab	@Y		; do write
+	else	;read
+		ldab	@Y
+		stab	datareg_byte	
+	endif
+	commandcomplete		;clear request 
+.endm
+
+.macro	processcommand
+	ldib	doitmask_const
+	andb	commandregh_byte
+	ifnz	
+		doit
+	else
+		ife	normalstart_const,commandregh_byte
+			normalstart
+		else
+			ife	stopstart_const,commandregh_byte
+				stopstart
+			else ;LBPstart
+				ife	LBPstart_const,commandregh_byte
+					LBPstart
+				else	;host
+					ldib	requestmask_const
+					andb	commandregh_byte
+					ifnz	;request	
+						host
+					else	;allelse
+						sets	datareg_byte		;fail
+						commandcomplete	;clear invalid command
+					endif 
+				endif
+			endif
+		endif
+	endif
+.endm
+
+.macro	clrnotstart
+	ldab	notwhichchanbits_byte
+	andtob	notstartbits_byte
+.endm
+
+.macro	clrnotready
+	ldab	notwhichchanbits_byte
+	andtob	notreadybits_byte
+.endm
+
+.macro	clrinvalid
+	ldab	notwhichchanbits_byte
+	andtob	invalidbits_byte
+.endm
+
+.macro	clrrequest
+	ldab	notwhichchanbits_byte
+	andtob	requestbits_byte
+.endm
+
+.macro	clrnotdone
+	ldab	notwhichchanbits_byte
+	andtob	notdonebits_byte
+.endm
+
+.macro NUwhilernz	reg	;while not zero
+	UNIQUE ; The 'loop' label
+	DUP
+LABEL
+	UNIQUE ; The 'done' label
+	DUP
+	ldab	reg
+	jmpz	LABEL
+.endm
+
+.macro	deadendincatX	paramatX
+	ldab	@X,paramatX
+	subb	@X,chanerrorcount_byte
+	ifc	;not more than maxerrors
+		ldib	1
+		addtob	@X,paramatX
+	else
+		seterror	toomanyerrorbit_const
+	endif	
+.endm
+
+.macro	seterror	k
+	ldib	k
+	call	seterrorsub
+.endm
+
+.macro	clrerror	k
+	ldib	~(k)&255
+	andtob	@X,chanstatus_byte
+.endm
+
+.macro	setstatus	k
+	ldib	k
+	ortob	@X,chanstatus_byte
+.endm
+
+.macro	clrstatus	k
+	ldib	~(k)&255	;for ored constants
+	andtob	@X,chanstatus_byte
+.endm
+
+.macro	initchannel	;only 1 channel
+	ldib	true_const
+;;	stab    @X,chanchktoomanyerrs_byte
+
+	ldib	noblatherbit_const|remfaultbit_const|noidbit_const
+	stab	@X,chanstatus_byte
+	call	clearfaults
+
+	ldib	false_const
+	stab	@X,chanstate_byte
+	stab	@X,chanerror_byte
+	stab	@X,chanerrorlog_byte
+	stab	@X,chanid_byte
+	stab	@X,changeneric_byte
+
+;clear host interface
+	stab	@T,putreaddata0_byte
+	stab	@T,putreaddata1_byte
+	stab	@T,putreaddata3_byte
+	stab	@T,putreaddata3_byte
+	stab	@T,putreaddata4_byte
+	stab	@T,putreaddata5_byte
+	stab	@T,putreaddata6_byte
+	stab	@T,putreaddata7_byte
+	stab	@T,putreaddata8_byte
+	stab	@T,putreaddata9_byte
+	stab	@T,putreaddata10_byte
+	stab	@T,putreaddata11_byte
+;uart
+	stab	@Z,rxfifocount_byte		;clear fifo
+;	ldib	0				;clear rxmask 
+	stab	@Z,rxmode_byte			;clear rxerrors
+
+	ldab	notwhichchanbits_byte
+	andtob	stopbits_byte			;clear stopbits
+
+	ldab	notwhichchanbits_byte
+	andtob	startbits_byte			;clr startbits
+
+	ldab	whichchanbits_byte
+	ortob	notstartbits_byte		;set notstartbits
+	ldab	whichchanbits_byte
+	ortob	notreadybits_byte		;set notreadybits
+
+	ldab	notwhichchanbits_byte
+	andtob	requestbits_byte
+.endm
+
+.macro	inituart
+;inituart ;baudrate and txen	;channel in channel_byte
+;baudrates cannot be greater than 2^24-1
+;bitrate =(baud shl 20)/clock
+;if bitrate < 65536 then round else add 1
+
+	mov@Xq	chanbaudrate_ulong,dividend_double+2
+		
+	call	sl
+	call	sl
+	call	sl
+	call	sl	;*16	;65536*4=2^20
+
+	ldib	0
+	stab	dividend_double+0	;low
+	stab	dividend_double+1	;low
+	stab	dividend_double+6	;high
+	stab	dividend_double+7	;high
+
+	movq	clock_ulong,divisor_ulong
+
+	call	divider
+		
+;;	ldab	dividend_double+1
+;;	ifz	;if more than 0.5% error then round
+;;		shlq	dividend_double+4	;double remainder
+;;		cmpq	dividend_double+4,clock_ulong
+;;		ifnc	;larger than half inc
+;;			incq	dividend_double
+;;		endif
+;;	else	;inc to always start above
+;;		incq	dividend_double
+;;	endif
+
+setbitrate	;uart in channel_byte baudrate in dividend_double
+	movs@Z	dividend_double+0,uartbitratel_byte
+	movs@Z	dividend_double+1,uartbitratem_byte
+	movs@Z	dividend_double+2,uartbitrateh_byte
+
+	stab	@Z,rxfifocount_byte		;clear fifo
+	ldib	0				;clear rxmask 
+	stab	@Z,rxmode_byte			;clear rxerrors
+	loads@Z	txena_const,txmode_byte		;enable txreg
+.endm
+
+.macro	globalinit; constant and variable initialization	
+	ldib	false_const
+	stab	hostdoorbell_byte	;clear doorbell
+	stab	starttype_byte
+
+	loads	0AAh,datareg_byte
+
+	sets	stopbits_byte	;reset each channel
+;channel, uart, 
+ 	loads	1,whichchanbits_byte
+	loads	~1&255,notwhichchanbits_byte
+
+	loaddX	channel0_ptr
+	loaddZ	uartoffset_const
+;;	loaddT	controlparam0_ptr
+	clrs	nchannelmask_byte
+	
+	forr	loop_byte,numberofchannels_byte
+		ldib	255
+		addb	true_byte	;set carry
+		
+		ldab	nchannelmask_byte
+		rclb			;shift in	
+		stab	nchannelmask_byte		
+		ldab	whichchanbits_byte
+		addtob	whichchanbits_byte	;shl
+		xorb	true_byte		;invert
+		stab	notwhichchanbits_byte
+
+		inituart
+
+	 	addiX	channelstride_const		
+		addiZ	uartstride_const		
+;;		addiT	hoststride_const
+	nextr	loop_byte
+.endm
+
+.macro	send8I20rpcstring
+	call	sendprefix
+	ldib	standardrpc_const
+	call	send
+
+	ldab	@T,theangle_uint+0	;angle
+	call	send
+	ldab	@T,theangle_uint+1
+	call	send
+	ldab	@T,torque_int+0		;torque
+	call	send
+	ldab	@T,torque_int+1
+	call	sendsendsuffix
+.endm 
+
+.macro	sendgenericrpcstring
+	ldab	@X,chanRPCxmitsize_byte
+	xorb	true_byte
+	stab	YL
+
+	call	sendprefix
+	ldib	standardrpc_const
+	call	send
+
+	ldab	@X,chanRPCxmitsize_byte
+	ifnz
+;unrolled loop
+		addiY	2
+		ldab	@T,getwritedata0_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata1_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata2_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata3_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata4_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata5_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata6_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata7_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata8_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata9_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		addiY	1
+		ldab	@T,getwritedata10_byte
+		call	send
+		ldab	YL
+		jmpz	senddone	
+
+		jumpshadowpipe
+		ldab	@T,getwritedata11_byte
+		call	send
+senddone
+	endif
+	call	sendsuffix
+.endm 
+
+
+.macro	send7I64rpcstring
+	call	sendprefix
+	ldib	standardrpc_const
+
+	call	send
+
+	ldab	@T,outbits_ulong+0
+	call	send
+	ldab	@T,outbits_ulong+1
+	call	send
+	ldab	@T,outbits_ulong+2
+	call	send
+
+	call	sendfalse
+
+	call	sendsuffix
+.endm 
+
+.macro	send7I64clearfaultstring
+	call	sendprefix
+	ldib	standardrpc_const
+	call	send
+
+	call	sendfalse
+	call	sendfalse
+	call	sendfalse
+
+	ldib	SevenI64watchdog_const	;clear watchdog
+	call	sendsendsuffix
+.endm 
+
+.macro	sendsetLBPtimeoutstring
+	call	sendprefix
+	ldib	LBPCHARTIMEOUT_byte | LBPWRITE_byte
+	call	send
+	ldib	ourlbptimeout_const
+	call	sendsendsuffix
+.endm
+
+.macro	sendcookiestring
+	call	sendprefix
+	ldib	LBPREADCOOKIE_byte
+	call	sendsendsuffix
+.endm
+
+.macro	sendid0string
+	call	sendprefix
+	ldib	LBPCARDNAME0_byte
+	call	sendsendsuffix
+.endm
+
+.macro	sendid1string
+	call	sendprefix
+	ldib	LBPCARDNAME1_byte
+	call	sendsendsuffix
+.endm
+
+.macro	sendid2string
+	call	sendprefix
+	ldib	LBPCARDNAME2_byte
+	call	sendsendsuffix
+.endm
+
+.macro	sendid3string
+	call	sendprefix
+	ldib	LBPCARDNAME3_byte
+	call	sendsendsuffix
+.endm
+
+.macro	sendclearsetpointstring
+	call	sendprefix
+	ldib	LBPCOMMAND_byte | LBPWRITE_byte | LBPA2_byte | LBPD2_byte
+	call	send
+	ldib	qsetpoint_int&255
+	call	send
+	ldib	qsetpoint_int>>8
+	call	send
+	call	sendfalse
+	call	sendfalse
+	call	sendsuffix
+.endm 
+
+.macro	sendcleargenstring
+	call	sendprefix
+	ldib	standardrpc_const
+	call	send
+
+	ldab	@X,chanRPCxmitsize_byte
+	stab	sendrecvloop_byte
+	ifnz
+		jumpshadowpipe	
+		begin
+			ldib	0
+			call	send
+			decs	sendrecvloop_byte
+		untilz
+		jumpshadowpipe	
+		jumpshadowpipe	
+	endif
+
+	call	sendsuffix
+.endm 
+
+.macro	sendsetwatchdogstring
+	call	sendprefix
+	ldib	LBPCOMMAND_byte | LBPWRITE_byte | LBPA2_byte | LBPD2_byte
+	call	send
+	ldib	watchdogtime_uint&255
+	call	send
+	ldib	watchdogtime_uint>>8
+	call	send
+	ldib	watchdogtime_const&255
+	call	send
+	ldib	watchdogtime_const>>8
+	call	sendsendsuffix
+.endm 
+
+.macro	sendsetpidenastring
+	call	sendprefix
+	ldib	LBPCOMMAND_byte | LBPWRITE_byte | LBPA2_byte | LBPD2_byte
+	call	send
+	ldib	pidena_flag&255
+	call	send
+	ldib	pidena_flag>>8
+	call	send
+	call	sendtrue
+	call	sendtrue
+	call	sendsuffix
+.endm 
+
+.macro	sendsetclrfaultstring	;set clearfault
+	call	sendprefix
+	ldib	LBPCOMMAND_byte | LBPWRITE_byte | LBPA2_byte | LBPD2_byte
+	call	send
+	ldib	clearfault_flag&255
+	call	send
+	ldib	clearfault_flag>>8
+	call	send
+	call	sendtrue
+	call	sendtrue
+	call	sendsuffix
+.endm 
+
+.macro	sendsetgenclrfaultstring	;set clearfault
+	call	sendprefix
+	ldib	LBPREMCLRFAULT_flag | LBPWRITE_byte
+	call	send
+	call	sendtrue
+	call	sendsuffix
+.endm 
+
+.macro	sendreqgenclrfaultstring	;set clearfault
+	call	sendprefix
+	ldib	LBPREMCLRFAULT_flag 
+	call	sendsendsuffix
+.endm 
+
+.macro	sendreqgenfaultstring	;set clearfault
+	call	sendprefix
+	ldib	LBPREMFAULT_byte
+	call	sendsendsuffix
+.endm 
+
+.macro	sendrequestpidonstring
+	call	sendprefix
+	ldib	LBPCOMMAND_byte | LBPA2_byte | LBPD2_byte
+	call	send
+	ldib	pidon_flag&255
+	call	send
+	ldib	pidon_flag>>8
+	call	sendsendsuffix
+.endm 
+
+.macro	sendrequestunitnumberstring
+	call	sendprefix
+	ldib	unitRPC_const
+	call	sendsendsuffix
+.endm 
+
+.macro	sendrequestfaultstring
+	call	sendprefix
+	ldib	LBPCOMMAND_byte | LBPA2_byte | LBPD2_byte
+	call	send
+	ldib	fault_flag&255
+	call	send
+	ldib	fault_flag>>8
+	call	sendsendsuffix
+.endm 
+
+.macro	sendrequestclrfaultstring
+	call	sendprefix
+	ldib	LBPCOMMAND_byte | LBPA2_byte | LBPD2_byte
+	call	send
+	ldib	clearfault_flag&255
+	call	send
+	ldib	clearfault_flag>>8
+	call	sendsendsuffix
+.endm 
+
+.macro	sendclrlbpstatusstring
+	call	sendprefix
+	ldib	LBPSTATUS_byte | LBPWRITE_byte
+	call	send
+	call	sendfalse
+	call	sendsuffix
+.endm 
+
+.macro	sendrequestlbpstatusstring
+	call	sendprefix
+	ldib	LBPSTATUS_byte
+	call	sendsendsuffix
+.endm 
+
+.macro	NUsendrequestmodestring
+	call	sendprefix
+	ldib	LBPREMMODE_byte
+	call	sendsendsuffix
+.endm 
+
+.macro	sendsetswmodestring
+	call	sendprefix
+	ldib	LBPREMSWMODE_byte+LBPWRITE_byte
+	call	send
+	ldab	@T,0	;latch data
+	ldab	@T,CSRSWMode_byte
+	call	send
+	call	sendsuffix
+.endm 
+
+.macro	sendrequestdiscoverystring
+	call	sendprefix
+	ldib	genericdiscRPC_const
+	call	sendsendsuffix
+.endm 
+
+.macro	ledoff	n
+;ledoff
+	ldib	020h
+	debug	n
+.endm
+
+.macro	ledon	n
+;ledon
+	ldib	0h
+	debug	n
+.endm
+
+.macro	checktimebnc	;checks times and clrs carry
+	ldab	hardwaretimer_uint+0
+	subb	@X,chanstarttime_uint+0
+	subb	@X,chantimeout_byte
+.endm
+
+.macro	sendLBPstring
+;check for valid lbp first
+	ldab	@T,LBPcommand_ulong+0	;latch
+	stab	LBPaddress_uint+0	
+
+	ldab	@T,LBPcommand_ulong+3
+	stab	LBPcommand_byte	
+
+	ldab	@T,LBPcommand_ulong+1
+	stab	LBPaddress_uint+1	
+
+	ldib	LBPCOMMAND_byte
+	andb	LBPcommand_byte	
+	ifz
+		clrrequest
+		jmp	finish
+	endif
+
+	call	sendprefix
+	ldab	LBPcommand_byte	
+	call	send
+
+	ldib	LBPDataSizeMask_const	;if this is put first, first rpd broken after doit
+	andb	LBPcommand_byte
+	stab	exploop_byte
+	datapipe
+
+	loads	1,exptemp_byte
+
+	begin
+		ldab	exploop_byte
+		jmpz	loopdone
+
+		decs	exploop_byte
+
+		ldab	exptemp_byte	;shl 1
+		addtob	exptemp_byte
+	again				
+loopdone
+
+	iflt	LBPFUNCTIONMASK_byte,LBPcommand_byte
+;calculate amount of address and data
+		ldib	LBPA2_byte
+		andb	LBPcommand_byte
+		ifnz	;send address
+			jumpshadowpipe
+			ldab	LBPaddress_uint+0
+			call	send
+			ldab	LBPaddress_uint+1
+			call	send
+		endif
+		ldib	LBPWRITE_byte
+		andb	LBPcommand_byte
+		ifnz	;write
+			ldib	0	;just crc
+			stab	@X,chanLBPdatasize_byte
+			ife	8,exptemp_byte
+				jumpshadowpipe
+				ldab	@T,LBPwritedatal_ulong+0
+				call	send
+				ldab	@T,LBPwritedatal_ulong+1
+				call	send
+				ldab	@T,LBPwritedatal_ulong+2
+				call	send
+				ldab	@T,LBPwritedatal_ulong+3
+				call	send
+				ldab	@T,LBPwritedatah_ulong+0
+				call	send
+				ldab	@T,LBPwritedatah_ulong+1
+				call	send
+				ldab	@T,LBPwritedatah_ulong+2
+				call	send
+				ldab	@T,LBPwritedatah_ulong+3
+				call	send
+			endif
+			ife	4,exptemp_byte
+				jumpshadowpipe
+				ldab	@T,LBPwritedatal_ulong+0
+				call	send
+				ldab	@T,LBPwritedatal_ulong+1
+				call	send
+				ldab	@T,LBPwritedatal_ulong+2
+				call	send
+				ldab	@T,LBPwritedatal_ulong+3
+				call	send
+			endif
+			ife	2,exptemp_byte
+				jumpshadowpipe
+				ldab	@T,LBPwritedatal_ulong+0
+				call	send
+				ldab	@T,LBPwritedatal_ulong+1
+				call	send
+			endif
+			ife	1,exptemp_byte
+				jumpshadowpipe
+				ldab	@T,LBPwritedatal_ulong+0
+				call	send
+			endif
+		else	;read
+			ldab	exptemp_byte
+			stab	@X,chanLBPdatasize_byte
+		endif
+	else	;local
+		ldib	LBPWRITE_byte
+		andb	LBPcommand_byte
+		ifnz	;write
+			jumpshadowpipe
+			ldab	@T,LBPwritedatal_ulong+0
+			call	send
+			ldib	0
+			stab	@X,chanLBPdatasize_byte
+		else	;read
+			ldib	1
+			stab	@X,chanLBPdatasize_byte
+		endif
+	endif
+	call	sendsuffix
+.endm 
+
+

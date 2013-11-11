@@ -1,0 +1,222 @@
+;************************ DUMB8S MACROS ********************************************
+
+.macro	loaddZ	const
+	LDIB	(const>>0)&255
+	STAB	ZL
+	LDIB	(const>>8)&255
+	STAB	ZH
+.endm
+
+.macro	loaddT	const
+	LDIB	(const>>0)&255
+	STAB	TL
+	LDIB	(const>>8)&255
+	STAB	TH
+.endm
+
+.macro	shiftleft4
+	addb	zero_byte
+	rclb
+	rclb
+	rclb
+	rclb
+.endm
+
+.macro	shiftleft3
+	addb	zero_byte
+	rclb
+	rclb
+	rclb
+.endm
+
+.macro	shiftleft2
+	addb	zero_byte
+	rclb
+	rclb
+.endm
+
+.macro	shiftleft2
+	addb	zero_byte
+	rclb
+	rclb
+.endm
+
+.macro	incs@X	reg
+	ldib	1
+	addb	@X,reg
+	stab	@X,reg
+.endm
+
+.macro	loads@X	k,reg
+	ldib	k
+	stab	@X,reg
+.endm
+
+.macro	loads@Z	k,reg
+	ldib	k
+	stab	@Z,reg
+.endm
+
+.macro	movs@X	s,d
+	ldab	s
+	stab	@X,d
+.endm
+
+.macro	movs@Z	s,d
+	ldab	s
+	stab	@Z,d
+.endm
+
+.macro	movd@X	s,d
+	movs@X	s+0,d+0
+	movs@X	s+1,d+1
+.endm
+
+.macro	movq@X	s,d
+	movs@X	s+0,d+0
+	movs@X	s+1,d+1
+	movs@X	s+2,d+2
+	movs@X	s+3,d+3
+.endm
+
+.macro	mov@Xs	s,d
+	ldab	@X,s
+	stab	d
+.endm
+
+.macro	mov@Xq	s,d
+	mov@Xs	s+0,d+0
+	mov@Xs	s+1,d+1
+	mov@Xs	s+2,d+2
+	mov@Xs	s+3,d+3
+.endm
+
+.macro	loadd@X	const,dest
+	loads@X (const>>0)&255,dest+0
+	loads@X	(const>>8)&255,dest+1
+.endm
+
+.macro	loadq@X	const,dest
+	loads@X (const>>0)&255,dest+0
+	loads@X	(const>>8)&255,dest+1
+	loads@X	(const>>16)&255,dest+2
+	loads@X	(const>>24)&255,dest+3
+.endm
+
+.macro	bitcrc	;acc is char
+	stab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	05eh
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+
+	ldab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	0bch
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+
+	ldab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	061h
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+
+	ldab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	0c2h
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+
+	ldab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	09dh
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+
+	ldab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	023h
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+
+	ldab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	046h
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+	ldab	temp_byte
+	rcrb
+	stab	temp_byte
+	ifc
+		ldib	08ch
+		xortob	@X,crc_byte
+	;;	stab	@X,crc_byte
+	endif
+.endm
+
+.macro	nibcrc	
+	saveX	
+	ldib	0;tablehigh
+	stab	XH
+	ldib	crc_byte
+	xorb	char_byte
+	stab	temp_byte
+	addb	zero_byte
+	rclb
+	rclb
+	rclb
+	rclb
+	
+	addb	0;lowcrc
+	stab	XL
+	ldab	@X
+	stab	temp1_byte
+
+	ldib	0fh
+	andb	temp_byte
+	addb	0;hicrc
+	stab	XL
+	ldab	@X
+	xorb	temp1_byte
+	stab	crc_byte
+	restoreX
+.endm
+
+.macro	addkd	k,regd
+	ldib	k&255
+	addtob	regd+0
+;;	stab	regd+0
+	ldib	(k>>8)&255
+	addctob	regd+1
+;;	stab	regd+1
+.endm
+
+.macro	addks	k,regs
+	ldib	k&255
+	addtob	regs
+;;	stab	regs
+.endm
+
+

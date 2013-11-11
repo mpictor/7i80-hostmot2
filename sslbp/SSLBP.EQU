@@ -1,0 +1,412 @@
+; after start
+; CSR	|   REMFAULT	|        STATE	|      STATUS	|      ERROR	|
+; USR0	|        UNIT ID NUMBER            				|
+; USR1	|        UNIT NAME                 				|
+; USR2	|    GLOBAL RECORD POINTER	|    PROCESS RECORD POINTER  	|
+; after doit
+; CSR	|REMFLT | STATE	| STATUS|ERROR	|
+; TYPES (contents of ram address)
+; 	<blank>	number of bits is hardware dependent	
+; 	ptr	10 bit address pointer
+; 	flag	16 bit value 0 is false, nonzero is true
+; 	uint	16 bit unsigned value 0..65535
+; 	int	16 bit signed value -32768..32767
+; 	ulong	32 bit unsigned value 0..4294967295
+; 	long	32 bit signed value -2147483648..2147483647
+; 	double	64 bit signed value -1.8E19..1.8E19
+; PARAMETER		VALUE	TYPE	FUNCTION
+; constants
+majorrevision_const     equ     01h             ; updated when parameters change, hi byte
+minorrevision_const     equ     02Ah            ; lo byte
+whatisupport0_const     equ     030324938h      ; 8I20
+id0_const               equ     080h            ; 8I20
+whatisupport1_const     equ     034364937h      ; 7I64
+id1_const               equ     074h            ; 7I64
+interfacetype_const     equ     012h            
+interfacewidth_const    equ     08h             
+gpioinputbits_const     equ     00h             
+gpiooutputbits_const    equ     00h             
+processortype_const     equ     0D8h            
+true_const              equ     0FFh            
+false_const             equ     00h             
+channelstride_const     equ     032h            ; @X
+; stringstride		16	%const	@Y	not used
+uartstride_const        equ     01h             ; @Z
+hoststride_const        equ     04h             ; @T
+NUrpcrecvsize_const     equ     08h             ; number of received chars from rpc
+faultsize_const         equ     02h             ; number of received chars from fault
+lbpclrfaultsize_const   equ     01h             ; number of received chars from LBP clear fault
+lbpfaultsize_const      equ     01h             ; number of received chars from LBP fault
+clrfaultsize_const      equ     02h             ; number of received chars from clrfault
+txena_const             equ     020h            ; to turn on transmitter
+rxoverrun_const         equ     01h             ; set when overrun detected
+rxbreak_const           equ     02h             ; set when break detected
+; defaultbaudrate		9600 %const
+; defaultbaudrate		19200 %const
+; defaultbaudrate		38400 %const
+; defaultbaudrate		57600 %const
+; defaultbaudrate		115200 %const
+; defaultbaudrate		230400 %const
+; defaultbaudrate		460800 %const
+; defaultbaudrate		921600 %const
+; defaultbaudrate		1250000 %const
+defaultbaudrate_const   equ     02625A0h        
+; defaultbaudrate		5000000 %const
+; defaultbaudrate		10000000 %const
+; ;timerrate		100000  %const	10uSec	;was
+; ;timerrate		200000  %const	5uSec
+timerrate_const         equ     07A120h         ; 2uSec ;rev40
+; ;;timeoutfudge		8     	%const	40 uSec for sslbp loop delay from 0..7 plus measurement jitter
+timeoutfudge_const      equ     014h            ; 40 uSec for sslbp loop delay from 0..7 plus measurement jitter
+; was starttimeout		100	%const	1mSec default
+; starttimeout		200	%const	1mSec default
+starttimeout_const      equ     0C8h            ; 400uSec default
+NUEightI20timeout_const equ     0Fh             ; 150 uSec
+NUSevenI64timeout_const equ     028h            ; 400 uSec
+ourlbptimeout_const     equ     028h            ; bittimes 4 char times
+setuptimerrate_const    equ     01388h          ; 200 uSec  no slower
+startstimeout_const     equ     06h             ; 1.2 mSec 
+startsruntimeout_const  equ     0FAh            ; 50 mSec for flash
+watchdogtime_const      equ     01F4h           ; number of pwm rates
+maxerrors_const         equ     014h            ; how many errors required to set status at startup
+; defined rpc's
+; standardrpc		BFh	%const	magic
+standardrpc_const       equ     0BDh            ; default
+; altrpc			BFh	%const	
+; EightI20RPC		BDh	%const  24 bytes available
+; SevenI64RPC		BDh	%const  24 bytes available
+; SevenI64RPC		BFh	%const  magic
+unitRPC_const           equ     0BCh            ; returns unitnumber
+genericdiscRPC_const    equ     0BBh            ; returns discovery
+SevenI64watchdog_const  equ     08h             ; watchdog bit
+uartoffset_const        equ     0280h           ; index register base
+; interface masks for commandreg high byte
+writemask_const         equ     080h            
+resetmask_const         equ     040h            
+requestmask_const       equ     020h            
+doitmask_const          equ     010h            ; data in doit is channel bitmask 
+; decodes
+stopstart_const         equ     08h             ; type of start
+normalstart_const       equ     09h             
+specialstart_const      equ     0Ah             
+datadiscovery_const     equ     0Bh             
+LBPstart_const          equ     0Fh             
+doit_const              equ     010h            
+doorbellmask_const      equ     01h             
+LBPDataSizeMask_const   equ     03h             
+chanrecvstring_ptr      equ     00h             ; 16 bytes, first to be able to use offsets
+chanstate_byte          equ     010h            ; state
+chanerror_byte          equ     011h            ; bitfield of error bits
+chanerrorlog_byte       equ     012h            ; bitfield of sticky errorbits
+chanstatus_byte         equ     013h            ; status
+chancrccount_byte       equ     014h            
+chancookiecount_byte    equ     015h            
+chanoverruncount_byte   equ     016h            
+chantimeoutcount_byte   equ     017h            
+chanextracharcount_byte equ     018h            
+chanbreakcount_byte     equ     019h            
+chanremfaultcount_byte  equ     01Ah            
+chanerrorcount_byte     equ     01Bh            ; required number of errors to cause status error
+chanLBPdatasize_byte    equ     01Ch            
+chanid_byte             equ     01Dh            ; id byte for 8I20,7I64 
+chandisablecrc_byte     equ     01Eh            
+NUchanfree0_byte        equ     01Fh            
+; NUchanchktoomanyerrs	$	%byte   true at startup, false after blather
+NUavovenotused_byte     equ     020h            ; true at startup, false after blather
+chanstarttime_uint      equ     021h            ; start of timeout
+chantimeout_byte        equ     023h            ; error when deltatime is greater
+changeneric_byte        equ     024h            ; nonzero if generic
+chanremfault_byte       equ     025h            
+chanwhatiam_ulong       equ     026h            
+chanbaudrate_ulong      equ     02Ah            
+chanRPCrecvsize_byte    equ     02Eh            
+chanRPCxmitsize_byte    equ     02Fh            
+chanmeasuredtime_byte   equ     030h            
+NUchanLBPcompat_byte    equ     031h            ; read from remote
+; error bits
+crcerrorbit_const       equ     01h             
+cookieerrorbit_const    equ     02h             
+overrunerrorbit_const   equ     04h             
+timeouterrorbit_const   equ     08h             
+extracharerrorbit_const equ     010h            
+breakcharerrorbit_const equ     020h            
+remfaulterrorbit_const  equ     040h            
+toomanyerrorbit_const   equ     080h            
+; status bits
+noblatherbit_const      equ     080h            ; true if not ready 
+noidbit_const           equ     040h            
+errorstatbit_const      equ     020h            
+remfaultbit_const       equ     01h             
+; channel states
+reset_enum              equ     00h             
+starttimer_enum         equ     01h             
+waittimeout_enum        equ     02h             
+requestcookie_enum      equ     03h             
+getcookie_enum          equ     04h             
+setlbptimeout_enum      equ     05h             
+checksetlbptimeout_enum equ     06h             
+clrlbpstatus_enum       equ     07h             
+checkclrlbpstatus_enum  equ     08h             
+requestlbpstatus_enum   equ     09h             
+getlbpstatus_enum       equ     0Ah             
+checklbpstatus_enum     equ     0Bh             
+requestunitnumber_enum  equ     0Ch             
+getunitnumber_enum      equ     0Dh             
+requestid0_enum         equ     0Eh             
+getid0_enum             equ     0Fh             
+requestid1_enum         equ     010h            
+getid1_enum             equ     011h            
+requestid2_enum         equ     012h            
+getid2_enum             equ     013h            
+requestid3_enum         equ     014h            
+getid3_enum             equ     015h            
+checkid0_enum           equ     016h            ; 8I20 path
+checkid1_enum           equ     017h            ; 7I64 path else generic path
+clear7I64faults_enum    equ     018h            ; 7I64 from checkid1
+check7I64faults_enum    equ     019h            
+setswmode_enum          equ     01Ah            ; generic
+checkswmode_enum        equ     01Bh            
+requestdiscovery_enum   equ     01Ch            ; generic
+getdiscovery_enum       equ     01Dh            
+cleargen_enum           equ     01Eh            ; generic, set outputs to 0
+checkcleargen_enum      equ     01Fh            
+setgenclrfaults_enum    equ     020h            ; generic, clear clr fault flag
+chksetgenclrfaults_enum equ     021h            
+reqgenclrfaults_enum    equ     022h            ; generic, see if clr fault is cleared
+getgenclrfaults_enum    equ     023h            
+reqgenfaults_enum       equ     024h            ; generic, check faults
+getgenfaults_enum       equ     025h            
+chkgenfaults_enum       equ     026h            ; to blather
+setclrfaults_enum       equ     027h            ; 8I20 from checkid0
+checksetclrfaults_enum  equ     028h            
+requestclrfaults_enum   equ     029h            ; 8I20
+getclrfaults_enum       equ     02Ah            
+requestfaults_enum      equ     02Bh            ; 8I20
+getfaults_enum          equ     02Ch            
+checkfaults_enum        equ     02Dh            
+clearsetpoint_enum      equ     02Eh            ; 8I20
+checkclearsetpoint_enum equ     02Fh            
+setpidena_enum          equ     030h            ; 8I20
+checksetpidena_enum     equ     031h            
+requestpidon_enum       equ     032h            ; 8I20
+getpidon_enum           equ     033h            
+checkpidon_enum         equ     034h            
+requestpidonfaults_enum equ     035h            ; 8I20
+getpidonfaults_enum     equ     036h            
+checkpidonfaults_enum   equ     037h            
+setwatchdog_enum        equ     038h            ; 8I20
+checksetwatchdog_enum   equ     039h            
+blather0_enum           equ     03Ah            ; wait for doorbell
+blather1_enum           equ     03Bh            
+send8I20_enum           equ     03Ch            
+recv8I20_enum           equ     03Dh            
+send7I64_enum           equ     03Eh            
+recv7I64_enum           equ     03Fh            
+sendLBP_enum            equ     040h            
+recvLBP_enum            equ     041h            
+sendgeneric_enum        equ     042h            
+recvgeneric_enum        equ     043h            
+; deadend		$	%enum	don't use doesn't clear command reg
+; ram start
+; id information
+interfacetype_byte      equ     00h             
+interfacewidth_byte     equ     01h             
+majorrevision_byte      equ     02h             
+minorrevision_byte      equ     03h             
+; gpioinputbits		$	%byte
+; gpiooutputbits		$	%byte
+channelstart_byte       equ     04h             ; ;added rev 34
+channelstride_byte      equ     05h             
+processortype_byte      equ     06h             
+numberofchannels_byte   equ     07h             
+whatisupport0_ulong     equ     08h             
+whatisupport1_ulong     equ     0Ch             
+whatisupport2_ulong     equ     010h            
+whatisupport3_ulong     equ     014h            
+whatisupport4_ulong     equ     018h            
+whatisupport5_ulong     equ     01Ch            
+whatisupport6_ulong     equ     020h            
+whatisupport7_ulong     equ     024h            
+; preset variables
+zero_byte               equ     028h            
+one_byte                equ     029h            
+NUthree_byte            equ     02Ah            
+true_byte               equ     02Bh            
+NUcookie_byte           equ     02Ch            
+; variables
+charcount_byte          equ     02Dh            
+charcrccount_byte       equ     02Eh            
+temp_byte               equ     02Fh            
+deltatime_uint          equ     030h            
+dividend_double         equ     032h            ; for div subroutine
+divisor_ulong           equ     03Ah            ; for div subroutine
+muldivcount_byte        equ     03Eh            
+NUshiftleft_ulong       equ     03Fh            
+chanloop_byte           equ     043h            
+loop_byte               equ     044h            
+exploop_byte            equ     045h            
+exptemp_byte            equ     046h            
+starttype_byte          equ     047h            
+initialized_byte        equ     048h            ; flag
+nchannelmask_byte       equ     049h            
+LBPcommand_byte         equ     04Ah            
+LBPaddress_uint         equ     04Bh            
+sendrecvloop_byte       equ     04Dh            
+commandtoprocess_byte   equ     04Eh            ; set by setupcode and always valid
+; bit field
+whichchanbits_byte      equ     04Fh            ; rotating one
+notwhichchanbits_byte   equ     050h            ; rotating zero
+startbits_byte          equ     051h            ; start request bitfield
+stopbits_byte           equ     052h            ; stop request bitfield
+notreadybits_byte       equ     053h            ; chan not ready
+notstartbits_byte       equ     054h            ; not started
+requestbits_byte        equ     055h            ; doit request when bit set
+invalidbits_byte        equ     056h            ; invalid when bit set
+notdonebits_byte        equ     057h            ; notdone when bit set
+blatherbits_byte        equ     058h            ; set by blather cleared by first doit
+runningbits_byte        equ     059h            ; set by first doit
+saveXL_byte             equ     05Ah            
+saveXH_byte             equ     05Bh            
+looptimer_byte          equ     05Ch            
+NUtimerrate_long        equ     05Dh            
+timerdiv_uint           equ     061h            
+starttimeout_byte       equ     063h            
+runtimeout_byte         equ     064h            
+looptime_byte           equ     065h            
+test0_byte              equ     066h            
+test1_byte              equ     067h            
+test2_byte              equ     068h            
+test3_byte              equ     069h            
+testlong0_long          equ     06Ah            
+last_ptr                equ     06Eh            
+channel0_ptr            equ     070h            ; 50 byte space per channel
+channel1_ptr            equ     0A2h            
+channel2_ptr            equ     0D4h            
+channel3_ptr            equ     0106h           
+channel4_ptr            equ     0138h           
+channel5_ptr            equ     016Ah           
+channel6_ptr            equ     019Ch           
+channel7_ptr            equ     01CEh           
+; rpc	BDh,tl,th,al,ah,crc
+; recv data 
+; 8I20
+invalidstatus_const     equ     080h            
+statusl_const           equ     00h             
+statush_const           equ     01h             
+faultl_const            equ     02h             
+faulth_const            equ     03h             
+busvl_const             equ     04h             
+busvh_const             equ     05h             
+temperaturel_const      equ     06h             
+temperatureh_const      equ     07h             
+; rpc	BDh,0,1,2,3,4,5,6,7,crc
+; from uart read buffer
+getreaddata0_byte       equ     00h             ; alway fault byte for generic
+getreaddata1_byte       equ     01h             
+getreaddata2_byte       equ     02h             
+getreaddata3_byte       equ     03h             
+getreaddata4_byte       equ     04h             
+getreaddata5_byte       equ     05h             
+getreaddata6_byte       equ     06h             
+getreaddata7_byte       equ     07h             
+getreaddata8_byte       equ     08h             
+getreaddata9_byte       equ     09h             
+getreaddata10_byte      equ     0Ah             
+getreaddata11_byte      equ     0Bh             
+getreaddata12_byte      equ     0Ch             
+getreaddata13_byte      equ     0Dh             
+getreaddata14_byte      equ     0Eh             
+getreaddata15_byte      equ     0Fh             
+; 7I64
+inbits_const            equ     00h             
+outbits_const           equ     00h             
+ain1ain0_const          equ     04h             
+; hardware
+commandregl_byte        equ     0200h           ; host interface command register ;5A00
+commandregh_byte        equ     0201h           ; host interface command register
+datareg_byte            equ     0202h           ; host interface data register	;5B00
+hostdoorbell_byte       equ     0203h           ; LSB set on write to host interface command register
+; write to clear
+settestbit_byte         equ     0220h           ; our external debug test bit set
+clrtestbit_byte         equ     0221h           ; our external debug test bit clear
+hardwaretimer_uint      equ     0222h           ; read timer, write phaseacc
+hardwarecrc_byte        equ     0224h           ; write char read crc
+resetcrc_byte           equ     0225h           ; write to resetcrc
+clock_ulong             equ     0230h           ; clock frequency in Hertz
+hardnchannel_byte       equ     0234h           ; number of channels
+uartdata_byte           equ     00h             ; read=rx write=tx
+uartbitratel_byte       equ     010h            ; lo byte both rx and tx
+uartbitratem_byte       equ     020h            ; hi byte
+uartbitrateh_byte       equ     030h            ; hi byte
+rxfifocount_byte        equ     040h            ; write clears
+rxmode_byte             equ     050h            
+txfifocount_byte        equ     060h            ; write clears
+txmode_byte             equ     070h            
+controlparam0_ptr       equ     0300h           ; ;5C00
+error_byte              equ     00h             ; read	normal
+status_byte             equ     01h             ; read	normal
+state_byte              equ     02h             ; read	normal
+csrremfault_byte        equ     03h             ; read	0 until successful doit
+NOTUSEDenable_byte      equ     00h             ; write	normal	nonzero to enable
+NOTUSEDnwritebytes_byte equ     01h             ; write	normal	number of write bytes
+NOTUSEDnreadbytes_byte  equ     02h             ; write	normal  number of read bytes
+NOTUSEDwhichrpc_byte    equ     03h             ; write	normal	which rpc
+LBPcommand_ulong        equ     00h             ; write setup	MS byte LS word is address
+CSRSWMode_byte          equ     03h             ; write
+; doorbell0	0700h	%ptr	LSB set if host write to controlparam0
+hostparam0_ptr          equ     0320h           ; ;offsets;5D00	
+outbits_ulong           equ     020h            ; write	normal	7I64
+theangle_uint           equ     020h            ; write	normal
+torque_int              equ     022h            ; write	normal
+LBPwritedatal_ulong     equ     020h            ; write	setup
+getwritedata0_byte      equ     020h            ; write	normal
+getwritedata1_byte      equ     021h            ; write	normal
+getwritedata2_byte      equ     022h            ; write	normal
+getwritedata3_byte      equ     023h            ; write	normal
+remtemperature_uint     equ     020h            ; read	normal
+inbits_ulong            equ     020h            ; read	normal	7I64
+voltage_uint            equ     022h            ; read	normal
+LBPreaddatal_ulong      equ     020h            ; read	setup
+unitnum_ulong           equ     020h            ; read	before doit
+putreaddata0_byte       equ     020h            ; read 	normal
+putreaddata1_byte       equ     021h            ; read 	normal
+putreaddata2_byte       equ     022h            ; read 	normal
+putreaddata3_byte       equ     023h            ; read 	normal
+hostparam1_ptr          equ     0340h           ; ;5E00
+; offsets
+; unused		40h	%uint	write
+; unused		42h	%uint	write
+whoiam_ulong            equ     040h            ; read	before doit
+getwritedata4_byte      equ     040h            ; write	normal
+getwritedata5_byte      equ     041h            ; write	normal
+getwritedata6_byte      equ     042h            ; write	normal
+getwritedata7_byte      equ     043h            ; write	normal
+ain1ain0_ulong          equ     040h            ; read	7i64
+; remstatus and remfault are updated when faults are read
+remstatus_uint          equ     040h            ; read	lbpstatus hi byte 8I20 status lo byte
+remfault_uint           equ     042h            ; read	8I20 faults
+LBPwritedatah_ulong     equ     040h            ; write	setup
+LBPreaddatah_ulong      equ     040h            ; read	setup
+putreaddata4_byte       equ     040h            ; read 	normal
+putreaddata5_byte       equ     041h            ; read 	normal
+putreaddata6_byte       equ     042h            ; read 	normal
+putreaddata7_byte       equ     043h            ; read 	normal
+hostparam2_ptr          equ     0360h           ; ;5F00
+; USR2	|RWSIZE???????|#PARAM	|RWSIZE	|
+; offsets
+; unused		60h	%uint	write
+; unused		62h	%uint	write
+; database	60h	%uint	read
+; databasepitch	62h	%byte	read
+; nparams		63h	%byte	read	before doit
+; new names R33
+PTOC_uint               equ     060h            ; read
+GTOC_uint               equ     062h            ; read
+putreaddata8_byte       equ     060h            ; read 	normal
+putreaddata9_byte       equ     061h            ; read 	normal
+putreaddata10_byte      equ     062h            ; read 	normal
+putreaddata11_byte      equ     063h            ; read 	normal
+getwritedata8_byte      equ     060h            ; write	normal
+getwritedata9_byte      equ     061h            ; write	normal
+getwritedata10_byte     equ     062h            ; write	normal
+getwritedata11_byte     equ     063h            ; write	normal

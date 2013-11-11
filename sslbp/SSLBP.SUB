@@ -1,0 +1,227 @@
+;SSLBP.SUB
+
+clearfaults
+	ldib	0
+	stab	@X,chancrccount_byte
+	stab	@X,chancookiecount_byte
+	stab	@X,chanoverruncount_byte
+	stab	@X,chantimeoutcount_byte
+	stab	@X,chanextracharcount_byte
+	stab	@X,chanbreakcount_byte
+	stab	@X,chanremfaultcount_byte
+	loads@X	maxerrors_const,chanerrorcount_byte
+	ret
+sl
+	shlq	dividend_double+2
+	ret
+divider
+	divoq	dividend_double,divisor_ulong
+	jumpshadowpipe	;next at end
+	jumpshadowpipe
+	ret
+
+recvstring0	ldib	0
+recvstring	;Z=uart	 sta @X, acc is <>0 if chars are received, acc = 0 crc error
+	stab	charcount_byte
+	push
+	ldab	@X,chandisablecrc_byte
+	ifz	;crc
+		pop
+		addb	one_byte
+		stab	charcrccount_byte
+		stab	resetcrc_byte	;start clear
+	else	;no crc
+		pop
+		ifnz
+			stab	charcrccount_byte
+			datapipe		;for spartan 3
+		else
+			ldib	true_const	;happy
+			ret			;leave early
+		endif
+	endif	
+
+	ldab	@Z,rxfifocount_byte
+	subb	charcrccount_byte
+	ifnc
+		ldib	rxbreak_const
+		andb	@Z,rxmode_byte
+		ifnz
+			deadendincatX	chanbreakcount_byte
+			seterror	breakcharerrorbit_const
+			ldib	0	;return not received
+			ret		;exit
+		endif
+
+		ldab	charcount_byte
+		ifnz
+			ldab	XL
+			stab	saveXL_byte
+			ldab	XH
+			stab	saveXH_byte
+
+			begin
+				jumpshadowpipe	;uart read side effect
+				jumpshadowpipe	;uart read side effect
+				ldab	@Z,uartdata_byte
+				stab	@X,chanrecvstring_ptr
+				stab	hardwarecrc_byte
+				addiX	1
+				decs	charcount_byte
+			untilz			
+			ldab	saveXL_byte
+			stab	XL
+			ldab	saveXH_byte
+			stab	XH
+
+			jumpshadowpipe	;read side effect
+		endif
+
+		ldab	@X,chandisablecrc_byte
+		ifz
+			ldab	@Z,uartdata_byte	;get crc char
+			subb	hardwarecrc_byte	;compare
+			ifnz
+				deadendincatX	chancrccount_byte
+				seterror	crcerrorbit_const
+				ldib	0	;return not received
+				ret		;leave early
+			endif
+		else
+			addb	zero_byte	;clear carry always
+		endif
+		ldib	true_const	
+	else
+		ldib	false_const
+	endif
+	ret
+
+checktimer	;@X	sets carry if timed out
+	checktimebnc
+	retc
+
+	deadendincatX	chantimeoutcount_byte
+	seterror	timeouterrorbit_const
+	ret
+	
+checktimerrestart	;@X	restart if timed out
+	checktimebnc
+	retc
+
+	deadendincatX	chantimeoutcount_byte
+	seterror	timeouterrorbit_const
+
+	ldib	toomanyerrorbit_const
+	andb	@X,chanerrorlog_byte
+	ifz
+		loads@X	starttimer_enum,chanstate_byte	;try again
+	endif
+	ret
+	
+sendprefix
+	begin
+		jumpshadowpipe
+		ldab	@Z,txfifocount_byte
+	untilz
+	
+	stab	resetcrc_byte	;start clear
+
+	ldab	@Z,rxfifocount_byte
+	ifnz
+		deadendincatX	chanextracharcount_byte
+		seterror	extracharerrorbit_const
+;;		stab	@Z,rxfifocount_byte		;clear rx fifo
+	endif
+
+	ldib	rxoverrun_const
+	andb	@Z,rxfifocount_byte
+	ifnz
+		deadendincatX	chanoverruncount_byte
+		seterror	overrunerrorbit_const
+	endif
+	ret
+
+sendtrue	
+	ldib	true_const
+	jmp	send
+sendfalse
+	ldib	false_const
+send
+	stab	hardwarecrc_byte
+	stab	@Z,uartdata_byte
+	ret
+
+sendsendsuffix
+	stab	hardwarecrc_byte
+	stab	@Z,uartdata_byte
+
+sendsuffix
+	ldab	@X,chandisablecrc_byte
+	ifz
+		jumpshadowpipe
+		ldab	hardwarecrc_byte	;insert CRC
+		stab	@Z,uartdata_byte
+	endif
+;fall through;	ret	;always start timer
+
+starttimer
+	movd@X hardwaretimer_uint,chanstarttime_uint	;capture time
+	ret
+
+settimersub	;time in divisor_ulong
+;progdivider = (hwclock/freq)-2
+;phaseacc =(rate *65536)/clock
+	movq	clock_ulong,dividend_double
+
+	ldib	0
+	stab	dividend_double+4
+	stab	dividend_double+5
+	stab	dividend_double+6
+	stab	dividend_double+7
+	
+	call	divider
+
+	movd	dividend_double,timerdiv_uint
+	decd	timerdiv_uint
+	decd	timerdiv_uint	
+	movd	timerdiv_uint,hardwaretimer_uint
+	ret
+
+seterrorsub	;k in acc
+	ortob	@X,chanerrorlog_byte	;set error bit
+
+	clrnotdone			;indicate done if any error
+
+	ldib	toomanyerrorbit_const
+	andb	@X,chanerrorlog_byte
+	ifnz
+		clrnotstart		;indicate started if toomany errors
+;;		clrnotready		;indicate notready if toomany errors
+ 	endif
+
+	ldib	errorstatbit_const
+	ortob	@X,chanstatus_byte
+
+	stab	@Z,rxfifocount_byte		;clear fifo
+	ldib	0				;clear rxmask 
+	stab	@Z,rxmode_byte			;clear rxerrors
+	ret
+
+;Check memory
+	.ECHO "There are "
+	.ECHO channel0_ptr-last_ptr
+	.ECHO " 'decimal' bytes of memory left \n"
+	.ECHO "\n"
+
+	.IF     last_ptr > channel0_ptr
+		NOT_ENOUGH_MEMORY!!!!
+		.ECHO "\n"
+	.ENDIF
+
+;Make sure we are not beyond the end of memory
+	CHECKEOM
+
+	org	eom
+	dw	0abcdh		;rom cookie
+
+

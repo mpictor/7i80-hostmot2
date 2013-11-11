@@ -1,0 +1,166 @@
+;************************ static data macros ********************************************
+; these raw jump macros will go away when we teach the assembler to use long (32 bit) object code
+
+.macro	jmp	const
+	RJMP	const >> 1
+.endm
+
+.macro	jsr	const
+	RJSR	const >> 1
+.endm
+
+.macro	jmpz	const
+	RJMPZ	const >> 1
+.endm
+
+.macro	jmpnz	const
+	RJMPNZ	const >> 1
+.endm
+
+.macro	jmpc	const
+	RJMPC	const >> 1
+.endm
+
+.macro	jmpnc	const
+	RJMPNC	const >> 1
+.endm
+
+.macro	loaddX	const
+	LWI	const
+	STA	X
+.endm
+
+.macro	loaddY	const
+	LWI	const
+	STA	Y
+.endm
+
+.macro	loaddZ	const
+	LWI	const
+	STA	Z
+.endm
+
+.macro	loaddT	const
+	LWI	const
+	STA	T
+.endm
+
+.macro	loadd	const,dest
+	LWI	const
+	STA	dest
+.endm
+
+.macro	movd	src,dest	;move src to dest
+	LDA	src
+	STA	dest
+.endm
+
+.macro	lwinbo	const
+	LWI	const
+	BSWP
+.endm
+
+.macro	loaddnbo	const,dest
+	LWI	const
+	BSWP
+	STA	dest
+.endm
+
+
+.macro	movdnbo	src,dest	;move src to dest NBO
+	LDA	src		; swap bytes
+	BSWP
+	STA	dest
+.endm
+
+.macro	loaddx	const,dest
+	LWI	const	
+	STA	@x,dest
+.endm
+
+.macro	loaddnbox	const,dest
+	LWI	const
+	BSWP
+	STA	@x,dest
+.endm
+
+.macro	movdnbox 	src,dest	;move src to dest network byte order
+	LDA	src
+	BSWP
+	STA	@x,dest
+.endm
+
+.macro	movdnboy 	src,dest	;move src to dest network byte order
+	LDA	src
+	BSWP
+	STA	@y,dest
+.endm
+
+.macro	movdyx	src,dest	;move src@y to dest@x
+	LDA	@y,src
+	STA	@x,dest
+.endm
+
+.macro	movdxy	src,dest	;move src@x to dest@y
+	LDA	@x,src
+	STA	@y,dest
+.endm
+
+.macro	movdx	src,dest	;move src to dest@x
+	LDA	src
+	STA	@x,dest
+.endm
+
+.macro	clc
+	add	zeroloc
+.endm
+
+.macro	debug0
+	sta	temp0
+	sta	ExtData
+	lwi	01000h
+	sta	ExtAdd
+	nop
+	nop
+	nop
+	sta	StartExtWrite
+	lda	temp0
+.endm
+
+.macro	debug1
+	sta	temp0
+	sta	ExtData
+	lwi	01004h
+	sta	ExtAdd
+	nop
+	nop
+	nop
+	sta	StartExtWrite
+	lda	temp0
+.endm
+
+.macro	debug2
+	sta	temp0
+	sta	ExtData
+	lwi	01008h
+	sta	ExtAdd
+	nop
+	nop
+	nop
+	sta	StartExtWrite
+	lda	temp0
+.endm
+
+.macro	debug3
+	sta	temp0
+	sta	ExtData
+	lwi	0100Ch
+	sta	ExtAdd
+	nop
+	nop
+	nop
+	sta	StartExtWrite
+	lda	temp0
+.endm
+
+
